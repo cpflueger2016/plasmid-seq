@@ -1,4 +1,0 @@
-[gather] started: Mon 02 Feb 2026 17:24:45 AWST
-[gather] SCRATCH=/scratch/peb002/cpflueger/plasmidSeq_2026-02-02/220786
-[gather] RESULTS=/group/llshared/PlasmidSeq/Results/plasmidSeq_2026-02-02/220786
-chown: invalid group: ‘cpflueger:llshared’
