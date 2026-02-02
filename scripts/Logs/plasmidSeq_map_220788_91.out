@@ -1,0 +1,29 @@
+[map] task=91 line=92 uid=PL18846 folder=Gene_Circuits_222026/PL18846_pMP_273_3 ref=pMP_273.fa
+Running the plasmid-seq pipeline with the following arguments: 
+fastQ_f: PL18846_pMP_273_3_S85_L001_R1_001.fastq.gz
+fastQ_r: PL18846_pMP_273_3_S85_L001_R2_001.fastq.gz
+fastaRef: pMP_273.fa
+skipSpadesDenovoAssembly: 1
+cleanSPADES: 0
+qval: 30
+minLengthSPADES: 300
+uniqueID: PL18846
+runUnicycler: 1
+skipping: 
+assembleUnmappedReads: FALSE
+
+44469 reads; of these:
+  44469 (100.00%) were paired; of these:
+    8846 (19.89%) aligned concordantly 0 times
+    30957 (69.61%) aligned concordantly exactly 1 time
+    4666 (10.49%) aligned concordantly >1 times
+    ----
+    8846 pairs aligned concordantly 0 times; of these:
+      6380 (72.12%) aligned discordantly 1 time
+    ----
+    2466 pairs aligned 0 times concordantly or discordantly; of these:
+      4932 mates make up the pairs; of these:
+        2146 (43.51%) aligned 0 times
+        1342 (27.21%) aligned exactly 1 time
+        1444 (29.28%) aligned >1 times
+97.59% overall alignment rate

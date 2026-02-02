@@ -1,0 +1,44 @@
+Read1 before filtering:
+total reads: 100212
+total bases: 31165932
+Q20 bases: 30959391(99.3373%)
+Q30 bases: 30371369(97.4505%)
+
+Read2 before filtering:
+total reads: 100212
+total bases: 31165932
+Q20 bases: 30793065(98.8036%)
+Q30 bases: 29983594(96.2063%)
+
+Read1 after filtering:
+total reads: 96486
+total bases: 29078777
+Q20 bases: 29042438(99.875%)
+Q30 bases: 28801685(99.0471%)
+
+Read2 after filtering:
+total reads: 96486
+total bases: 29074154
+Q20 bases: 28977032(99.666%)
+Q30 bases: 28583546(98.3126%)
+
+Filtering result:
+reads passed filter: 192972
+reads failed due to low quality: 7268
+reads failed due to too many N: 0
+reads failed due to too short: 182
+reads failed due to low complexity: 2
+reads with adapter trimmed: 28686
+bases trimmed due to adapters: 1884040
+reads with polyX in 3' end: 865
+bases trimmed in polyX tail: 55531
+
+Duplication rate: 15.8581%
+
+Insert size peak (evaluated by paired-end reads): 388
+
+JSON report: PL18959_pRS2_E_010_fastp_report.json
+HTML report: PL18959_pRS2_E_010_fastp_report.html
+
+fastp -w 4 -q 30 -i PL18959_pRS2_E_010_S198_L001_R1_001.fastq.gz -I PL18959_pRS2_E_010_S198_L001_R2_001.fastq.gz -o PL18959_pRS2_E_010_R1_trimmed.fastq -O PL18959_pRS2_E_010_R2_trimmed.fastq -h PL18959_pRS2_E_010_fastp_report.html -j PL18959_pRS2_E_010_fastp_report.json -R PL18959_pRS2_E_010_fastp_report --adapter_sequence CTGTCTCTTATACAC --adapter_sequence_r2 TGTATAAGAGACAG -x -y 
+fastp v0.22.0, time used: 1 seconds

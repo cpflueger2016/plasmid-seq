@@ -1,0 +1,29 @@
+[map] task=5 line=6 uid=PL18958 folder=600cycle_longInsert_PlasmidSeq_222026/PL18958_PAC2_6_1_LLP923 ref=PAC2.6.1.fa
+Running the plasmid-seq pipeline with the following arguments: 
+fastQ_f: PL18958_PAC2_6_1_LLP923_S197_L001_R1_001.fastq.gz
+fastQ_r: PL18958_PAC2_6_1_LLP923_S197_L001_R2_001.fastq.gz
+fastaRef: PAC2.6.1.fa
+skipSpadesDenovoAssembly: 1
+cleanSPADES: 0
+qval: 30
+minLengthSPADES: 300
+uniqueID: PL18958
+runUnicycler: 1
+skipping: 
+assembleUnmappedReads: FALSE
+
+200087 reads; of these:
+  200087 (100.00%) were paired; of these:
+    93835 (46.90%) aligned concordantly 0 times
+    100072 (50.01%) aligned concordantly exactly 1 time
+    6180 (3.09%) aligned concordantly >1 times
+    ----
+    93835 pairs aligned concordantly 0 times; of these:
+      81301 (86.64%) aligned discordantly 1 time
+    ----
+    12534 pairs aligned 0 times concordantly or discordantly; of these:
+      25068 mates make up the pairs; of these:
+        13186 (52.60%) aligned 0 times
+        7716 (30.78%) aligned exactly 1 time
+        4166 (16.62%) aligned >1 times
+96.70% overall alignment rate

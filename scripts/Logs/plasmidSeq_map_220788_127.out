@@ -1,0 +1,29 @@
+[map] task=127 line=128 uid=PL18790 folder=NDD_CRISPR_222026/PL18790_EHMT1_03 ref=EHMT1.fa
+Running the plasmid-seq pipeline with the following arguments: 
+fastQ_f: PL18790_EHMT1_03_S29_L001_R1_001.fastq.gz
+fastQ_r: PL18790_EHMT1_03_S29_L001_R2_001.fastq.gz
+fastaRef: EHMT1.fa
+skipSpadesDenovoAssembly: 1
+cleanSPADES: 0
+qval: 30
+minLengthSPADES: 300
+uniqueID: PL18790
+runUnicycler: 1
+skipping: 
+assembleUnmappedReads: FALSE
+
+208 reads; of these:
+  208 (100.00%) were paired; of these:
+    170 (81.73%) aligned concordantly 0 times
+    38 (18.27%) aligned concordantly exactly 1 time
+    0 (0.00%) aligned concordantly >1 times
+    ----
+    170 pairs aligned concordantly 0 times; of these:
+      6 (3.53%) aligned discordantly 1 time
+    ----
+    164 pairs aligned 0 times concordantly or discordantly; of these:
+      328 mates make up the pairs; of these:
+        326 (99.39%) aligned 0 times
+        2 (0.61%) aligned exactly 1 time
+        0 (0.00%) aligned >1 times
+21.63% overall alignment rate

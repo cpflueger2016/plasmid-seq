@@ -1,0 +1,29 @@
+[map] task=178 line=179 uid=PL18768 folder=Neuronal_Maturation_222026/PL18768_pLD048_17 ref=pLD048_LVX_U6_BC_pMAP2_RORA_WPRE_pEFS_TagBFP2.fa
+Running the plasmid-seq pipeline with the following arguments: 
+fastQ_f: PL18768_pLD048_17_S7_L001_R1_001.fastq.gz
+fastQ_r: PL18768_pLD048_17_S7_L001_R2_001.fastq.gz
+fastaRef: pLD048_LVX_U6_BC_pMAP2_RORA_WPRE_pEFS_TagBFP2.fa
+skipSpadesDenovoAssembly: 1
+cleanSPADES: 0
+qval: 30
+minLengthSPADES: 300
+uniqueID: PL18768
+runUnicycler: 1
+skipping: 
+assembleUnmappedReads: FALSE
+
+30678 reads; of these:
+  30678 (100.00%) were paired; of these:
+    5825 (18.99%) aligned concordantly 0 times
+    24808 (80.87%) aligned concordantly exactly 1 time
+    45 (0.15%) aligned concordantly >1 times
+    ----
+    5825 pairs aligned concordantly 0 times; of these:
+      2940 (50.47%) aligned discordantly 1 time
+    ----
+    2885 pairs aligned 0 times concordantly or discordantly; of these:
+      5770 mates make up the pairs; of these:
+        5367 (93.02%) aligned 0 times
+        403 (6.98%) aligned exactly 1 time
+        0 (0.00%) aligned >1 times
+91.25% overall alignment rate

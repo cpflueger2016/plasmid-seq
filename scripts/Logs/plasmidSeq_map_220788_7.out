@@ -1,0 +1,29 @@
+[map] task=7 line=8 uid=PL18960 folder=600cycle_longInsert_PlasmidSeq_222026/PL18960_MH_CENH3 ref=MH-CENH3_pXVE-NLSaGCN4-GFP-CENH3__pAct-dC9s-U6C.fa
+Running the plasmid-seq pipeline with the following arguments: 
+fastQ_f: PL18960_MH_CENH3_S199_L001_R1_001.fastq.gz
+fastQ_r: PL18960_MH_CENH3_S199_L001_R2_001.fastq.gz
+fastaRef: MH-CENH3_pXVE-NLSaGCN4-GFP-CENH3__pAct-dC9s-U6C.fa
+skipSpadesDenovoAssembly: 1
+cleanSPADES: 0
+qval: 30
+minLengthSPADES: 300
+uniqueID: PL18960
+runUnicycler: 1
+skipping: 
+assembleUnmappedReads: FALSE
+
+106223 reads; of these:
+  106223 (100.00%) were paired; of these:
+    55653 (52.39%) aligned concordantly 0 times
+    50367 (47.42%) aligned concordantly exactly 1 time
+    203 (0.19%) aligned concordantly >1 times
+    ----
+    55653 pairs aligned concordantly 0 times; of these:
+      51557 (92.64%) aligned discordantly 1 time
+    ----
+    4096 pairs aligned 0 times concordantly or discordantly; of these:
+      8192 mates make up the pairs; of these:
+        2607 (31.82%) aligned 0 times
+        3388 (41.36%) aligned exactly 1 time
+        2197 (26.82%) aligned >1 times
+98.77% overall alignment rate

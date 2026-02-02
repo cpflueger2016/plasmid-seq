@@ -1,0 +1,9 @@
+[prep] SCRATCH=/scratch/peb002/cpflueger/plasmidSeq_2026-02-02/220763
+[prep] RESULTS=/group/llshared/PlasmidSeq/Results/plasmidSeq_2026-02-02/220763
+building file list ... done
+./
+
+sent 78 bytes  received 19 bytes  194.00 bytes/sec
+total size is 0  speedup is 0.00
+mv: cannot move '*/PL*R1*' to a subdirectory of itself, '*/PL*R1*/PL*R1*'
+mv: warning: source directory '*/PL*R1*' specified more than once

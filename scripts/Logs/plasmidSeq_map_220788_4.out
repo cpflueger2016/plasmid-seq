@@ -1,0 +1,29 @@
+[map] task=4 line=5 uid=PL18957 folder=600cycle_longInsert_PlasmidSeq_222026/PL18957_pdC9s_U6C_LLP920 ref=pAct-dC9s-U6C_LLP920.fa
+Running the plasmid-seq pipeline with the following arguments: 
+fastQ_f: PL18957_pdC9s_U6C_LLP920_S196_L001_R1_001.fastq.gz
+fastQ_r: PL18957_pdC9s_U6C_LLP920_S196_L001_R2_001.fastq.gz
+fastaRef: pAct-dC9s-U6C_LLP920.fa
+skipSpadesDenovoAssembly: 1
+cleanSPADES: 0
+qval: 30
+minLengthSPADES: 300
+uniqueID: PL18957
+runUnicycler: 1
+skipping: 
+assembleUnmappedReads: FALSE
+
+29098 reads; of these:
+  29098 (100.00%) were paired; of these:
+    11893 (40.87%) aligned concordantly 0 times
+    17205 (59.13%) aligned concordantly exactly 1 time
+    0 (0.00%) aligned concordantly >1 times
+    ----
+    11893 pairs aligned concordantly 0 times; of these:
+      11153 (93.78%) aligned discordantly 1 time
+    ----
+    740 pairs aligned 0 times concordantly or discordantly; of these:
+      1480 mates make up the pairs; of these:
+        1065 (71.96%) aligned 0 times
+        415 (28.04%) aligned exactly 1 time
+        0 (0.00%) aligned >1 times
+98.17% overall alignment rate

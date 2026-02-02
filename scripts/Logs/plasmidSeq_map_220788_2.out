@@ -1,0 +1,16 @@
+[map] task=2 line=3 uid=PL18955 folder=600cycle_longInsert_PlasmidSeq_222026/PL18955_pCDS_B3o_IV2 ref=na
+Running the plasmid-seq pipeline with the following arguments: 
+fastQ_f: PL18955_pCDS_B3o_IV2_S194_L001_R1_001.fastq.gz
+fastQ_r: PL18955_pCDS_B3o_IV2_S194_L001_R2_001.fastq.gz
+fastaRef: na
+skipSpadesDenovoAssembly: 1
+cleanSPADES: 0
+qval: 30
+minLengthSPADES: 300
+uniqueID: PL18955
+runUnicycler: 1
+skipping: 
+assembleUnmappedReads: FALSE
+
+No fasta reference file given by providing option '-r na'. Skipping reference assembly...
+

@@ -1,0 +1,16 @@
+[map] task=116 line=117 uid=PL18926 folder=MossX_222026/PL18926_pCDS_FlpO_GR_A ref=na
+Running the plasmid-seq pipeline with the following arguments: 
+fastQ_f: PL18926_pCDS_FlpO_GR_A_S165_L001_R1_001.fastq.gz
+fastQ_r: PL18926_pCDS_FlpO_GR_A_S165_L001_R2_001.fastq.gz
+fastaRef: na
+skipSpadesDenovoAssembly: 1
+cleanSPADES: 0
+qval: 30
+minLengthSPADES: 300
+uniqueID: PL18926
+runUnicycler: 1
+skipping: 
+assembleUnmappedReads: FALSE
+
+No fasta reference file given by providing option '-r na'. Skipping reference assembly...
+

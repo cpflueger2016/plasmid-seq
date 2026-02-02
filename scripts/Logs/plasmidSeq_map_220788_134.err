@@ -1,0 +1,44 @@
+Read1 before filtering:
+total reads: 59
+total bases: 18349
+Q20 bases: 18221(99.3024%)
+Q30 bases: 17750(96.7355%)
+
+Read2 before filtering:
+total reads: 59
+total bases: 18349
+Q20 bases: 18309(99.782%)
+Q30 bases: 18138(98.8501%)
+
+Read1 after filtering:
+total reads: 58
+total bases: 13816
+Q20 bases: 13809(99.9493%)
+Q30 bases: 13712(99.2472%)
+
+Read2 after filtering:
+total reads: 58
+total bases: 13816
+Q20 bases: 13799(99.877%)
+Q30 bases: 13705(99.1966%)
+
+Filtering result:
+reads passed filter: 116
+reads failed due to low quality: 2
+reads failed due to too many N: 0
+reads failed due to too short: 0
+reads failed due to low complexity: 0
+reads with adapter trimmed: 64
+bases trimmed due to adapters: 8632
+reads with polyX in 3' end: 0
+bases trimmed in polyX tail: 0
+
+Duplication rate: 0%
+
+Insert size peak (evaluated by paired-end reads): 80
+
+JSON report: PL18797_EHMT1_10_fastp_report.json
+HTML report: PL18797_EHMT1_10_fastp_report.html
+
+fastp -w 4 -q 30 -i PL18797_EHMT1_10_S36_L001_R1_001.fastq.gz -I PL18797_EHMT1_10_S36_L001_R2_001.fastq.gz -o PL18797_EHMT1_10_R1_trimmed.fastq -O PL18797_EHMT1_10_R2_trimmed.fastq -h PL18797_EHMT1_10_fastp_report.html -j PL18797_EHMT1_10_fastp_report.json -R PL18797_EHMT1_10_fastp_report --adapter_sequence CTGTCTCTTATACAC --adapter_sequence_r2 TGTATAAGAGACAG -x -y 
+fastp v0.22.0, time used: 0 seconds

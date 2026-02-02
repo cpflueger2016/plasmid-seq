@@ -1,0 +1,29 @@
+[map] task=93 line=94 uid=PL18850 folder=Gene_Circuits_222026/PL18850_pCMK1288_2 ref=pCMK1288.fa
+Running the plasmid-seq pipeline with the following arguments: 
+fastQ_f: PL18850_pCMK1288_2_S89_L001_R1_001.fastq.gz
+fastQ_r: PL18850_pCMK1288_2_S89_L001_R2_001.fastq.gz
+fastaRef: pCMK1288.fa
+skipSpadesDenovoAssembly: 1
+cleanSPADES: 0
+qval: 30
+minLengthSPADES: 300
+uniqueID: PL18850
+runUnicycler: 1
+skipping: 
+assembleUnmappedReads: FALSE
+
+933 reads; of these:
+  933 (100.00%) were paired; of these:
+    364 (39.01%) aligned concordantly 0 times
+    569 (60.99%) aligned concordantly exactly 1 time
+    0 (0.00%) aligned concordantly >1 times
+    ----
+    364 pairs aligned concordantly 0 times; of these:
+      24 (6.59%) aligned discordantly 1 time
+    ----
+    340 pairs aligned 0 times concordantly or discordantly; of these:
+      680 mates make up the pairs; of these:
+        673 (98.97%) aligned 0 times
+        7 (1.03%) aligned exactly 1 time
+        0 (0.00%) aligned >1 times
+63.93% overall alignment rate

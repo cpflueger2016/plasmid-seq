@@ -1,0 +1,29 @@
+[map] task=79 line=80 uid=PL18925 folder=BLADE_FL_222026/PL18925_pFL_257_2 ref=pFL_257.fa
+Running the plasmid-seq pipeline with the following arguments: 
+fastQ_f: PL18925_pFL_257_2_S164_L001_R1_001.fastq.gz
+fastQ_r: PL18925_pFL_257_2_S164_L001_R2_001.fastq.gz
+fastaRef: pFL_257.fa
+skipSpadesDenovoAssembly: 1
+cleanSPADES: 0
+qval: 30
+minLengthSPADES: 300
+uniqueID: PL18925
+runUnicycler: 1
+skipping: 
+assembleUnmappedReads: FALSE
+
+21584 reads; of these:
+  21584 (100.00%) were paired; of these:
+    3990 (18.49%) aligned concordantly 0 times
+    17594 (81.51%) aligned concordantly exactly 1 time
+    0 (0.00%) aligned concordantly >1 times
+    ----
+    3990 pairs aligned concordantly 0 times; of these:
+      3054 (76.54%) aligned discordantly 1 time
+    ----
+    936 pairs aligned 0 times concordantly or discordantly; of these:
+      1872 mates make up the pairs; of these:
+        1339 (71.53%) aligned 0 times
+        533 (28.47%) aligned exactly 1 time
+        0 (0.00%) aligned >1 times
+96.90% overall alignment rate
