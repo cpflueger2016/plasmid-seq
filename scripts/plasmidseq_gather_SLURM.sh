@@ -24,6 +24,8 @@ plasmidSeqData="$3"
 
 echo "[gather] started: $(date)"
 echo "[gather] SCRATCH=$SCRATCH"
+mkdir -p "$SCRATCH/Logs"
+exec > >(tee -a "$SCRATCH/Logs/slurm-${SLURM_JOBID}.out") 2>&1
 echo "[gather] RESULTS=$RESULTS"
 
 mkdir -p "$RESULTS"
@@ -77,7 +79,7 @@ echo "[gather] scratch removed."
 
 # Permissions
 USER=${USER:-$(whoami)}
-chown -R "$USER:llshared" "$AlignedData" "$RESULTS"
+chown -R "$USER:${RESULTS_GROUP:-llusers}" "$AlignedData" "$RESULTS" || true
 chmod -R 777 "$AlignedData" "$RESULTS"
 
 echo "[gather] finished: $(date)"
