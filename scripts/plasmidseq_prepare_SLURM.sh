@@ -11,6 +11,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MATCHER="${SCRIPT_DIR}/match_plasmid_fasta_refs_v2.bash"
+
+
 module load gcc
 conda activate /group/llshared/shared_conda_envs/plasmidseq
 PATH=/group/llshared/shared_conda_envs/plasmidseq:$PATH
@@ -85,9 +89,11 @@ done
 shopt -u nullglob
 
 # Match plasmid fasta to samples
-/group/llshared/PlasmidSeq/match_plasmid_fasta_refs_v2.bash \
+"$MATCHER" \
+  -r "$SCRATCH" \
   -l "$SCRATCH/plasmid_fasta_match.log" \
-  PL_to_fasta.tsv Fasta_Reference_Files/
+  ${VERBOSE_FLAG:-} \
+  "$TSV" "$REFS"
 
 # Create jobs file
 : > jobs.tsv
