@@ -236,20 +236,20 @@ while IFS=$'\t' read -r pl_raw fasta_raw _rest || [[ -n "${pl_raw:-}" ]]; do
     ref="${exact[0]}"
     vlog "PL=$pl : exact match found: $ref"
   elif [[ ${#exact[@]} -gt 1 ]]; then
-    log "ERROR" "PL=$pl : Multiple EXACT reference matches for '$fasta_name' (${#exact[@]}). Marking ambiguous."
-    touch_safe "$dest/na"
+    # Ambiguous: keep breadcrumb, but proceed with the first (sorted) hit.
+    ref="${exact[0]}"
+    log "WARN" "PL=$pl : Multiple EXACT reference matches for '$fasta_name' (${#exact[@]}). Using first hit: $ref (see FASTA_REF_AMBIGUOUS.matches.txt)"
     touch_safe "$dest/FASTA_REF_AMBIGUOUS"
     write_file_safe "$dest/FASTA_REF_AMBIGUOUS.matches.txt" "${exact[@]}"
-    continue
   elif [[ ${#candidates[@]} -eq 1 ]]; then
     ref="${candidates[0]}"
     vlog "PL=$pl : single prefix match found: $ref"
   elif [[ ${#candidates[@]} -gt 1 ]]; then
-    log "ERROR" "PL=$pl : Multiple reference matches for '$fasta_name*' (${#candidates[@]}). Marking ambiguous."
-    touch_safe "$dest/na"
+    # Ambiguous: keep breadcrumb, but proceed with the first (sorted) hit.
+    ref="${candidates[0]}"
+    log "WARN" "PL=$pl : Multiple reference matches for '$fasta_name*' (${#candidates[@]}). Using first hit: $ref (see FASTA_REF_AMBIGUOUS.matches.txt)"
     touch_safe "$dest/FASTA_REF_AMBIGUOUS"
     write_file_safe "$dest/FASTA_REF_AMBIGUOUS.matches.txt" "${candidates[@]}"
-    continue
   else
     log "WARN" "PL=$pl : Reference fasta not found for '$fasta_name' in '$FASTA_REFS'. Creating '$dest/na'"
     touch_safe "$dest/na"
@@ -271,3 +271,4 @@ while IFS=$'\t' read -r pl_raw fasta_raw _rest || [[ -n "${pl_raw:-}" ]]; do
 done < "$TSV"
 
 vlog "Done."
+

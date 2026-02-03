@@ -32,15 +32,41 @@ for f in jobs.tsv plasmid_fasta_match.log; do
 done
 
 
+
 # Move everything except refs/junk into results
 cd "$SCRATCH"
-find . -mindepth 1 -maxdepth 1 -type d ! \( -name "Fasta_Reference_Files" -o -name "Stats" -o -name "Reports" -o -name "Logs" \) \
+find . -mindepth 1 -maxdepth 1 -type d ! \( -name "Fasta_Reference_Files" -o -name "Stats" -o -name "Reports" \) \
   -exec mv -t "$RESULTS" {} +
 
 # Copy results also to Run/Aligned (your original logic)
 AlignedData=${plasmidSeqData/fastq*/}"/Aligned"
 mkdir -p "$AlignedData"
-cp -r "$RESULTS"/* "$AlignedData"
+cp -fr "$RESULTS"/* "$AlignedData"
+
+
+# --- Cleanup scratch (be paranoid)
+echo "[gather] cleanup: removing scratch dir $SCRATCH"
+
+# refuse to delete anything that looks suspicious
+if [[ -z "${SCRATCH:-}" || "$SCRATCH" == "/" || "$SCRATCH" == "." ]]; then
+  echo "[gather][ERROR] SCRATCH path is unsafe ('$SCRATCH'); refusing to delete." >&2
+  exit 1
+fi
+
+# Strong safety check: must live under MYSCRATCH if available
+if [[ -n "${MYSCRATCH:-}" ]]; then
+  case "$SCRATCH" in
+    "$MYSCRATCH"/*) ;;
+    *)
+      echo "[gather][ERROR] SCRATCH ('$SCRATCH') is not under MYSCRATCH ('$MYSCRATCH'); refusing to delete." >&2
+      exit 1
+      ;;
+  esac
+fi
+
+rm -rf "$SCRATCH"
+echo "[gather] scratch removed."
+
 
 # Permissions
 USER=${USER:-$(whoami)}
