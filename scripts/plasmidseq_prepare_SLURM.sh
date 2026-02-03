@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="/mmfs1/data/group/llshared/PlasmidSeq/plasmid-seq/scripts"
 MATCHER="${SCRIPT_DIR}/match_plasmid_fasta_refs_v2.bash"
 
 
