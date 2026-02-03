@@ -5,6 +5,7 @@ set -euo pipefail
 DEFAULT_TSV="/group/llshared/PlasmidSeq/PL_to_fasta.tsv"
 DEFAULT_REFS="/group/llshared/PlasmidSeq/Fasta_Reference_Files"
 MAX_CONCURRENT=50
+log_file="" 
 
 usage() {
   cat <<EOF
@@ -18,6 +19,7 @@ Optional:
   -t <file>  PL_to_fasta.tsv path (default: ${DEFAULT_TSV})
   -f <dir>   Fasta reference folder path (default: ${DEFAULT_REFS})
   -p <int>   Max concurrent array tasks (default: ${MAX_CONCURRENT})
+  -l <file>  Submit log file (default: <plasmidSeqData>/plasmidseq_submit_<date>.log)
 
 Example:
   $(basename "$0") -d /home/.../fastqs
@@ -35,6 +37,7 @@ while getopts ":d:t:f:p:h" opt; do
     t) tsv="$OPTARG" ;;
     f) refs="$OPTARG" ;;
     p) MAX_CONCURRENT="$OPTARG" ;;
+    l) log_file="$OPTARG" ;;
     h) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
@@ -62,6 +65,15 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 jobdate="$(date +%Y-%m-%d)"
 jobname="plasmidSeq_${jobdate}"
 
+# --- logging: mirror stdout/stderr to a file via tee
+if [[ -z "${log_file}" ]]; then
+  log_file="${plasmidSeqData%/}/plasmidseq_submit_${jobdate}.log"
+fi
+mkdir -p "$(dirname "$log_file")"
+exec > >(tee -a "$log_file") 2>&1
+echo "[submit] logging to: $log_file"
+
+
 echo "[submit] jobdate=$jobdate"
 echo "[submit] plasmidSeqData=$plasmidSeqData"
 echo "[submit] TSV=$tsv"
@@ -78,6 +90,11 @@ echo "[submit] prep job: $prep_jobid"
 # We can compute the scratch path deterministically (since MYSCRATCH is stable and prep uses jobid)
 SCRATCH="${MYSCRATCH}/${jobname}/${prep_jobid}"
 RESULTS="/group/llshared/PlasmidSeq/Results/${jobname}/${prep_jobid}"
+
+# best effort: keep a copy of the submit log alongside the run in scratch
+# (gather can then copy it into RESULTS automatically)
+mkdir -p "${SCRATCH}" 2>/dev/null || true
+cp -f "$log_file" "${SCRATCH}/plasmidseq_submit.log" 2>/dev/null || true
 
 echo "[submit] expected SCRATCH=$SCRATCH"
 echo "[submit] expected RESULTS=$RESULTS"
