@@ -336,6 +336,46 @@ fi
 
 
 
+
+# 6b. Annotate Unicycler assembly with pLannotate (longest contig only)
+# Runs only if Unicycler produced a non-empty assembly fasta AND if CONDA_ENV_PLANNOTATE is set/valid.
+if [[ "${runUnicycler}" == 1 ]]; then
+
+	base="${fastQ_f%_S[0-9]*}"
+	uni_dir="${base}_unicycler_assembly"
+	uni_fa="${uni_dir}/${base}_unicycler_assembly.fasta"
+	long_fa="${uni_dir}/${base}_longestUnicycler_seq.fasta"
+	plann_dir="${base}_plannotate"
+	plann_log="${plann_dir}/${base}_plannotate.log"
+
+	if [[ -s "$uni_fa" ]]; then
+		# Only run if user provided a plannotate conda env path (or it is exported by the pipeline)
+		if [[ -n "${CONDA_ENV_PLANNOTATE:-}" && -d "${CONDA_ENV_PLANNOTATE:-}" ]]; then
+			mkdir -p "$plann_dir"
+			# Extract the longest contig from the assembly
+			seqkit sort -l -r "$uni_fa" | seqkit head -n 1 > "$long_fa"
+			if [[ -s "$long_fa" ]]; then
+				# Prefer conda run to avoid needing to "activate" in batch contexts
+				if command -v conda >/dev/null 2>&1; then
+					conda run -p "$CONDA_ENV_PLANNOTATE" plannotate batch \
+						-i "$long_fa" \
+						-o "$plann_dir" \
+						-h -f "$base" &> "$plann_log"
+				else
+					echo "[WARN] conda not found in PATH; skipping pLannotate for $base" | tee -a "$plann_log"
+				fi
+			else
+				echo "[WARN] longest contig fasta is empty; skipping pLannotate for $base" | tee -a "$plann_log"
+			fi
+		else
+			# No env provided; silently skip (pipeline can still run without annotations)
+			echo "[WARN] CONDA_ENV_PLANNOTATE not set or not a directory; skipping pLannotate for $base"
+		fi
+	else
+		echo "[WARN] Unicycler assembly not found/empty ($uni_fa); skipping pLannotate for $base"
+	fi
+fi
+
 # 7. Create consensus fasta
 if [ "${skipConsenus}" == "FALSE" ]; then
 	
