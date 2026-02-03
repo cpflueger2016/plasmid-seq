@@ -1,0 +1,77 @@
+# plasmidseq.local.config
+# Local/site overrides (do NOT commit). Copy this file next to plasmidseq_submit.sh.
+#
+# Recommended: add to .gitignore
+#   scripts/plasmidseq.local.config
+
+########################
+# Core paths (edit these)
+########################
+
+# Where final results should be written
+RESULTS_BASE="/group/llshared/PlasmidSeq/Results"
+
+# Default mapping TSV and reference FASTA directory
+DEFAULT_TSV="/group/llshared/PlasmidSeq/PL_to_fasta.tsv"
+DEFAULT_REFS="/group/llshared/PlasmidSeq/Fasta_Reference_Files"
+
+# Scratch base (prefer using the site-provided env var if available)
+# If your site sets MYSCRATCH, you can leave SCRATCH_BASE as-is.
+SCRATCH_BASE="${MYSCRATCH:-/scratch/${USER}}"
+
+##################################
+# Pipeline scripts / tool locations
+##################################
+
+# If the pipeline scripts are installed somewhere shared, set this.
+# Otherwise, leave empty and the Slurm scripts will use their own directory.
+PIPELINE_SCRIPTS_DIR=""
+
+# Explicit script paths override PIPELINE_SCRIPTS_DIR if set:
+MATCHER_PATH=""   # e.g. "/path/to/scripts/match_plasmid_fasta_refs_v2.bash"
+MAPPER_PATH=""    # e.g. "/path/to/scripts/plasmidseq_mapper_PE.sh"
+
+########################
+# Conda/module activation
+########################
+
+# Optional: modules to load (space-separated). Leave blank if not needed.
+MODULES=""
+
+# How to initialize conda for non-interactive batch jobs.
+# Typical options:
+#   CONDA_INIT="$HOME/miniconda3/etc/profile.d/conda.sh"
+#   CONDA_INIT="/path/to/miniconda/etc/profile.d/conda.sh"
+CONDA_INIT=""
+
+# Conda env name OR absolute env path
+# Examples:
+#   CONDA_ENV="bioinfo"
+#   CONDA_ENV="/group/peb002/conda_environments/bioinfo"
+CONDA_ENV=""
+
+########################
+# Slurm defaults (edit if needed)
+########################
+
+PARTITION_PREP="ll"
+PARTITION_MAP="work"
+PARTITION_GATHER="ll"
+
+# Optional: account/QoS (set if your site requires)
+SBATCH_ACCOUNT=""
+SBATCH_QOS=""
+
+########################
+# Performance knobs
+########################
+
+# Default concurrency throttle for job arrays (submit -p overrides)
+MAX_CONCURRENT_DEFAULT=50
+
+# Cluster max array size (often 1001)
+MAX_ARRAY_SIZE=1001
+
+# Mapping resources (sbatch CLI options override #SBATCH inside scripts)
+MAP_CPUS_PER_TASK=4
+MAP_MEM_PER_CPU="10G"
