@@ -11,6 +11,13 @@
 
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+cfg="${PLASMIDSEQ_CONFIG:-${script_dir}/plasmidseq.config}"
+if [[ -f "$cfg" ]]; then
+  # shellcheck source=/dev/null
+  source "$cfg"
+fi
+
 SCRATCH="$1"
 RESULTS="$2"
 plasmidSeqData="$3"

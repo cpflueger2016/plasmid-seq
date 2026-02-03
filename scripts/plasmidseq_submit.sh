@@ -2,10 +2,12 @@
 set -euo pipefail
 
 # Defaults
-DEFAULT_TSV="/group/llshared/PlasmidSeq/PL_to_fasta.tsv"
-DEFAULT_REFS="/group/llshared/PlasmidSeq/Fasta_Reference_Files"
-MAX_CONCURRENT=50
+# Defaults (populated by config)
+DEFAULT_TSV=""
+DEFAULT_REFS=""
+MAX_CONCURRENT=""
 log_file="" 
+
 
 usage() {
   cat <<EOF
@@ -27,16 +29,14 @@ Example:
 EOF
 }
 
-plasmidSeqData=""
-tsv="$DEFAULT_TSV"
-refs="$DEFAULT_REFS"
 
-while getopts ":d:t:f:p:h" opt; do
+while getopts ":d:t:f:p:l:c:h" opt; do
   case "$opt" in
     d) plasmidSeqData="$OPTARG" ;;
     t) tsv="$OPTARG" ;;
     f) refs="$OPTARG" ;;
     p) MAX_CONCURRENT="$OPTARG" ;;
+    c) PLASMIDSEQ_CONFIG="$OPTARG" ;;
     l) log_file="$OPTARG" ;;
     h) usage; exit 0 ;;
     *) usage; exit 2 ;;
@@ -61,9 +61,58 @@ if [[ ! -d "$refs" ]]; then
   exit 1
 fi
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load the config file
+load_config() {
+  local cfg="${PLASMIDSEQ_CONFIG:-}"
+
+  if [[ -z "$cfg" ]]; then
+    if [[ -f "$CONFIG_LOCAL" ]]; then
+      cfg="$CONFIG_LOCAL"
+    else
+      cfg="$CONFIG_DEFAULT"
+    fi
+  fi
+
+  if [[ ! -f "$cfg" ]]; then
+    echo "[submit][ERROR] Config file not found: $cfg" >&2
+    exit 1
+  fi
+
+  # shellcheck source=/dev/null
+  source "$cfg"
+  echo "[submit] config=$cfg"
+}
+
 jobdate="$(date +%Y-%m-%d)"
 jobname="plasmidSeq_${jobdate}"
+
+# Parse args first (so -c can point to a different config)
+
+load_config
+
+# Define where the scripts location are
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+cfg="${PLASMIDSEQ_CONFIG:-${script_dir}/plasmidseq.config}"
+if [[ -f "$cfg" ]]; then
+  # shellcheck source=/dev/null
+  source "$cfg"
+fi
+
+# Config precedence:
+#   1) -c <file> (sets PLASMIDSEQ_CONFIG)
+#   2) env var PLASMIDSEQ_CONFIG
+#   3) scripts/plasmidseq.local.config (if present)
+#   4) scripts/plasmidseq.config (default)
+CONFIG_DEFAULT="${script_dir}/plasmidseq.config"
+CONFIG_LOCAL="${script_dir}/plasmidseq.local.config"
+
+# Apply config defaults only if user didn't override via CLI
+tsv="${tsv:-${DEFAULT_TSV}}"
+refs="${refs:-${DEFAULT_REFS}}"
+MAX_CONCURRENT="${MAX_CONCURRENT:-${MAX_CONCURRENT_DEFAULT:-50}}"
+RESULTS_BASE="${RESULTS_BASE:-/group/llshared/PlasmidSeq/Results}"
+MAX_ARRAY_SIZE="${MAX_ARRAY_SIZE:-1001}"
 
 # --- logging: mirror stdout/stderr to a file via tee
 if [[ -z "${log_file}" ]]; then
@@ -82,6 +131,7 @@ echo "[submit] max_concurrent=$MAX_CONCURRENT"
 
 # 1) Submit prep job (writes jobs.tsv into scratch)
 prep_jobid=$(sbatch --parsable \
+  --export=ALL,PLASMIDSEQ_CONFIG="${PLASMIDSEQ_CONFIG:-}" \
   "${script_dir}/plasmidseq_prepare_SLURM.sh" \
   -d "$plasmidSeqData" -t "$tsv" -f "$refs" -j "$jobdate"
 )
@@ -89,7 +139,7 @@ echo "[submit] prep job: $prep_jobid"
 
 # We can compute the scratch path deterministically (since MYSCRATCH is stable and prep uses jobid)
 SCRATCH="${MYSCRATCH}/${jobname}/${prep_jobid}"
-RESULTS="/group/llshared/PlasmidSeq/Results/${jobname}/${prep_jobid}"
+RESULTS="${RESULTS_BASE}/${jobname}/${prep_jobid}"
 
 # best effort: keep a copy of the submit log alongside the run in scratch
 # (gather can then copy it into RESULTS automatically)

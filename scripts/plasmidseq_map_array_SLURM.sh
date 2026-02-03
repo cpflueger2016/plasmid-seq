@@ -14,6 +14,14 @@
 set -euo pipefail
 
 # args:
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+cfg="${PLASMIDSEQ_CONFIG:-${script_dir}/plasmidseq.config}"
+if [[ -f "$cfg" ]]; then
+  # shellcheck source=/dev/null
+  source "$cfg"
+fi
+
+
 #   1) SCRATCH dir (where jobs.tsv lives and sample folders are)
 SCRATCH="$1"
 JOBS="$SCRATCH/jobs.tsv"
