@@ -21,6 +21,17 @@ echo "[gather] RESULTS=$RESULTS"
 
 mkdir -p "$RESULTS"
 
+# --- Keep key run-level files
+for f in jobs.tsv plasmid_fasta_match.log; do
+  if [[ -f "$SCRATCH/$f" ]]; then
+    echo "[gather] saving $f -> $RESULTS/"
+    cp -f "$SCRATCH/$f" "$RESULTS/"
+  else
+    echo "[gather][WARN] missing $SCRATCH/$f"
+  fi
+done
+
+
 # Move everything except refs/junk into results
 cd "$SCRATCH"
 find . -mindepth 1 -maxdepth 1 -type d ! \( -name "Fasta_Reference_Files" -o -name "Stats" -o -name "Reports" -o -name "Logs" \) \

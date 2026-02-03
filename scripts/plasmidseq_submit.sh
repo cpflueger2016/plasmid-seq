@@ -122,13 +122,29 @@ fi
 echo "[submit] jobs: $n_jobs"
 
 # 3) Submit mapping array (4 cores per plasmid task) — depends on prep
-array_jobid=$(sbatch --parsable \
-  --dependency=afterok:"$prep_jobid" \
-  --array=0-$((n_jobs-1))%${MAX_CONCURRENT} \
-  "${script_dir}/plasmidseq_map_array_SLURM.sh" \
-  "$SCRATCH"
-)
-echo "[submit] map array job: $array_jobid"
+MAX_ARRAY=1001
+chunk=0
+offset=0
+array_jobids=()
+
+while [[ $offset -lt $n_jobs ]]; do
+  remaining=$((n_jobs - offset))
+  this_chunk=$(( remaining < MAX_ARRAY ? remaining : MAX_ARRAY ))
+  last_index=$((this_chunk - 1))
+
+  array_jobid=$(sbatch --parsable \
+    --dependency=afterok:"$prep_jobid" \
+    --array=0-${last_index}%${MAX_CONCURRENT} \
+    "${script_dir}/plasmidseq_map_array_SLURM.sh" \
+    "$SCRATCH" "$offset"
+  )
+
+  echo "[submit] map array chunk $chunk: job=$array_jobid offset=$offset size=$this_chunk"
+  array_jobids+=("$array_jobid")
+
+  offset=$((offset + this_chunk))
+  chunk=$((chunk + 1))
+done
 
 # 4) Submit gather job — depends on array completing successfully
 gather_jobid=$(sbatch --parsable \

@@ -17,6 +17,7 @@ set -euo pipefail
 #   1) SCRATCH dir (where jobs.tsv lives and sample folders are)
 SCRATCH="$1"
 JOBS="$SCRATCH/jobs.tsv"
+OFFSET="${2:-0}"   # offset into jobs.tsv (0-based)
 
 module load gcc
 conda activate /group/llshared/shared_conda_envs/plasmidseq
