@@ -89,11 +89,12 @@ done
 shopt -u nullglob
 
 # Match plasmid fasta to samples
+chmod +x "$MATCHER"
 "$MATCHER" \
   -r "$SCRATCH" \
   -l "$SCRATCH/plasmid_fasta_match.log" \
   ${VERBOSE_FLAG:-} \
-  "$TSV" "$REFS"
+  "$tsv" "$refs"
 
 # Create jobs file
 : > jobs.tsv
