@@ -1,43 +1,48 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Defaults
-# Defaults (populated by config)
-DEFAULT_TSV=""
-DEFAULT_REFS=""
-MAX_CONCURRENT=""
-log_file="" 
-
-
 usage() {
   cat <<EOF
 Usage:
   $(basename "$0") -d <plasmidSeqData_dir> [options]
 
 Required:
-  -d <dir>   Folder containing Project folders / fastqs to stage into scratch
+  -d <dir>    Folder containing Project folders / fastqs to stage into scratch
 
 Optional:
-  -t <file>  PL_to_fasta.tsv path (default: ${DEFAULT_TSV})
-  -f <dir>   Fasta reference folder path (default: ${DEFAULT_REFS})
-  -p <int>   Max concurrent array tasks (default: ${MAX_CONCURRENT})
-  -l <file>  Submit log file (default: <plasmidSeqData>/plasmidseq_submit_<date>.log)
+  -t <file>   PL_to_fasta.tsv path (default from config: DEFAULT_TSV)
+  -f <dir>    Fasta reference folder path (default from config: DEFAULT_REFS)
+  -p <int>    Max concurrent array tasks per array chunk (default from config: MAX_CONCURRENT_DEFAULT)
+  -l <file>   Submit log file (default: <plasmidSeqData>/plasmidseq_submit_<date>.log)
+  -c <file>   Config file (default: scripts/plasmidseq.local.config if present, else scripts/plasmidseq.config)
+  -h          Help
 
-Example:
-  $(basename "$0") -d /home/.../fastqs
-  $(basename "$0") -d /home/.../fastqs -t ./PL_to_fasta.tsv -f ./Fasta_Reference_Files -p 80
+Examples:
+  $(basename "$0") -d /path/to/fastqs
+  $(basename "$0") -d /path/to/fastqs -p 100
+  $(basename "$0") -d /path/to/fastqs -c ./plasmidseq.config
 EOF
 }
 
+plasmidSeqData=""
+tsv=""
+refs=""
+max_concurrent=""
+log_file=""
+PLASMIDSEQ_CONFIG=""
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+CONFIG_DEFAULT="${script_dir}/plasmidseq.config"
+CONFIG_LOCAL="${script_dir}/plasmidseq.local.config"
 
 while getopts ":d:t:f:p:l:c:h" opt; do
   case "$opt" in
     d) plasmidSeqData="$OPTARG" ;;
     t) tsv="$OPTARG" ;;
     f) refs="$OPTARG" ;;
-    p) MAX_CONCURRENT="$OPTARG" ;;
-    c) PLASMIDSEQ_CONFIG="$OPTARG" ;;
+    p) max_concurrent="$OPTARG" ;;
     l) log_file="$OPTARG" ;;
+    c) PLASMIDSEQ_CONFIG="$OPTARG" ;;
     h) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
@@ -48,21 +53,7 @@ if [[ -z "${plasmidSeqData}" ]]; then
   exit 2
 fi
 
-if [[ ! -d "$plasmidSeqData" ]]; then
-  echo "[submit][ERROR] plasmidSeqData dir not found: $plasmidSeqData" >&2
-  exit 1
-fi
-if [[ ! -f "$tsv" ]]; then
-  echo "[submit][ERROR] TSV not found: $tsv" >&2
-  exit 1
-fi
-if [[ ! -d "$refs" ]]; then
-  echo "[submit][ERROR] Refs dir not found: $refs" >&2
-  exit 1
-fi
-
-
-# Load the config file
+# --- Load config ---
 load_config() {
   local cfg="${PLASMIDSEQ_CONFIG:-}"
 
@@ -81,102 +72,123 @@ load_config() {
 
   # shellcheck source=/dev/null
   source "$cfg"
-  echo "[submit] config=$cfg"
+  export PLASMIDSEQ_CONFIG="$cfg"
 }
+
+load_config
+
+# Apply config defaults if CLI not provided
+tsv="${tsv:-${DEFAULT_TSV}}"
+refs="${refs:-${DEFAULT_REFS}}"
+max_concurrent="${max_concurrent:-${MAX_CONCURRENT_DEFAULT:-50}}"
+RESULTS_BASE="${RESULTS_BASE:-/group/llshared/PlasmidSeq/Results}"
+MAX_ARRAY_SIZE="${MAX_ARRAY_SIZE:-1001}"
+SCRATCH_ROOT="${SCRATCH_BASE:-${MYSCRATCH:-}}"
 
 jobdate="$(date +%Y-%m-%d)"
 jobname="plasmidSeq_${jobdate}"
 
-# Parse args first (so -c can point to a different config)
-
-load_config
-
-# Define where the scripts location are
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-cfg="${PLASMIDSEQ_CONFIG:-${script_dir}/plasmidseq.config}"
-if [[ -f "$cfg" ]]; then
-  # shellcheck source=/dev/null
-  source "$cfg"
-fi
-
-# Config precedence:
-#   1) -c <file> (sets PLASMIDSEQ_CONFIG)
-#   2) env var PLASMIDSEQ_CONFIG
-#   3) scripts/plasmidseq.local.config (if present)
-#   4) scripts/plasmidseq.config (default)
-CONFIG_DEFAULT="${script_dir}/plasmidseq.config"
-CONFIG_LOCAL="${script_dir}/plasmidseq.local.config"
-
-# Apply config defaults only if user didn't override via CLI
-tsv="${tsv:-${DEFAULT_TSV}}"
-refs="${refs:-${DEFAULT_REFS}}"
-MAX_CONCURRENT="${MAX_CONCURRENT:-${MAX_CONCURRENT_DEFAULT:-50}}"
-RESULTS_BASE="${RESULTS_BASE:-/group/llshared/PlasmidSeq/Results}"
-MAX_ARRAY_SIZE="${MAX_ARRAY_SIZE:-1001}"
-
-# --- logging: mirror stdout/stderr to a file via tee
+# default submit log file
 if [[ -z "${log_file}" ]]; then
   log_file="${plasmidSeqData%/}/plasmidseq_submit_${jobdate}.log"
 fi
 mkdir -p "$(dirname "$log_file")"
 exec > >(tee -a "$log_file") 2>&1
+
 echo "[submit] logging to: $log_file"
-
-
+echo "[submit] config=${PLASMIDSEQ_CONFIG}"
 echo "[submit] jobdate=$jobdate"
 echo "[submit] plasmidSeqData=$plasmidSeqData"
 echo "[submit] TSV=$tsv"
 echo "[submit] REFS=$refs"
-echo "[submit] max_concurrent=$MAX_CONCURRENT"
+echo "[submit] max_concurrent=$max_concurrent"
+echo "[submit] max_array_size=$MAX_ARRAY_SIZE"
 
-# 1) Submit prep job (writes jobs.tsv into scratch)
-prep_jobid=$(sbatch --parsable \
-  --export=ALL,PLASMIDSEQ_CONFIG="${PLASMIDSEQ_CONFIG:-}" \
-  "${script_dir}/plasmidseq_prepare_SLURM.sh" \
-  -d "$plasmidSeqData" -t "$tsv" -f "$refs" -j "$jobdate"
+# --- Validation ---
+if [[ ! -d "$plasmidSeqData" ]]; then
+  echo "[submit][ERROR] plasmidSeqData dir not found: $plasmidSeqData" >&2
+  exit 1
+fi
+if [[ ! -f "$tsv" ]]; then
+  echo "[submit][ERROR] TSV not found: $tsv" >&2
+  exit 1
+fi
+if [[ ! -d "$refs" ]]; then
+  echo "[submit][ERROR] Refs dir not found: $refs" >&2
+  exit 1
+fi
+if [[ -z "${SCRATCH_ROOT:-}" ]]; then
+  echo "[submit][ERROR] SCRATCH_ROOT is empty (set MYSCRATCH env var or SCRATCH_BASE in config)." >&2
+  exit 1
+fi
+
+# --- SBATCH common args ---
+sbatch_common=()
+if [[ -n "${SBATCH_ACCOUNT:-}" ]]; then sbatch_common+=(--account="${SBATCH_ACCOUNT}"); fi
+if [[ -n "${SBATCH_QOS:-}" ]]; then sbatch_common+=(--qos="${SBATCH_QOS}"); fi
+
+export_str="ALL,PLASMIDSEQ_CONFIG=${PLASMIDSEQ_CONFIG}"
+# Keep existing env (export=ALL) plus our config path
+sbatch_export=(--export="${export_str}")
+
+# Resolve SLURM scripts (relative to this submit script by default)
+resolve_slurm() {
+  local base="$1"
+  local override="$2"
+  if [[ -n "$override" && -f "$override" ]]; then
+    echo "$override"
+  else
+    echo "${script_dir}/${base}"
+  fi
+}
+
+PREP_SLURM="$(resolve_slurm "${PREP_SLURM_BASENAME:-plasmidseq_prepare_SLURM.sh}" "${PREP_SLURM_PATH:-}")"
+MAP_SLURM="$(resolve_slurm "${MAP_SLURM_BASENAME:-plasmidseq_map_array_SLURM.sh}" "${MAP_SLURM_PATH:-}")"
+GATHER_SLURM="$(resolve_slurm "${GATHER_SLURM_BASENAME:-plasmidseq_gather_SLURM.sh}" "${GATHER_SLURM_PATH:-}")"
+
+# --- 1) Prep job ---
+prep_args=("${sbatch_common[@]}" "${sbatch_export[@]}")
+if [[ -n "${PARTITION_PREP:-}" ]]; then prep_args+=(--partition="${PARTITION_PREP}"); fi
+
+prep_jobid=$(sbatch --parsable "${prep_args[@]}"   "$PREP_SLURM"   -d "$plasmidSeqData" -t "$tsv" -f "$refs" -j "$jobdate"
 )
 echo "[submit] prep job: $prep_jobid"
 
-# We can compute the scratch path deterministically (since MYSCRATCH is stable and prep uses jobid)
-SCRATCH="${MYSCRATCH}/${jobname}/${prep_jobid}"
+SCRATCH="${SCRATCH_ROOT}/${jobname}/${prep_jobid}"
 RESULTS="${RESULTS_BASE}/${jobname}/${prep_jobid}"
-
-# best effort: keep a copy of the submit log alongside the run in scratch
-# (gather can then copy it into RESULTS automatically)
-mkdir -p "${SCRATCH}" 2>/dev/null || true
-cp -f "$log_file" "${SCRATCH}/plasmidseq_submit.log" 2>/dev/null || true
 
 echo "[submit] expected SCRATCH=$SCRATCH"
 echo "[submit] expected RESULTS=$RESULTS"
 
-# 2) Wait for jobs.tsv to appear (prep must finish staging and writing it)
+# --- 2) Wait for jobs.tsv ---
 jobs_file="${SCRATCH}/jobs.tsv"
 echo "[submit] waiting for jobs file: $jobs_file"
 
-# up to ~2 hours (720 * 10s); adjust if you want
-for _ in $(seq 1 720); do
-  # Success condition: jobs.tsv exists
+get_state() {
+  sacct -n -P -j "$1" --format=State 2>/dev/null | head -n1 | cut -d'|' -f1
+}
+
+for i in $(seq 1 720); do
   if [[ -f "$jobs_file" ]]; then
     break
   fi
 
-  # Failure detection: if prep job finished in a bad state, stop waiting
-  state=$(sacct -j "$prep_jobid" --noheader --format=State | head -n 1 | awk '{print $1}' || true)
-  case "$state" in
-    FAILED|CANCELLED|TIMEOUT|OUT_OF_MEMORY)
-      echo "[submit][ERROR] prep job $prep_jobid ended with state=$state; jobs.tsv will not appear." >&2
+  # every ~60s, check if prep has failed
+  if (( i % 6 == 0 )); then
+    st="$(get_state "$prep_jobid" || true)"
+    if [[ "$st" == "FAILED" || "$st" == "CANCELLED" || "$st" == "TIMEOUT" ]]; then
+      echo "[submit][ERROR] prep job $prep_jobid ended with state=$st; jobs.tsv will not appear." >&2
       echo "[submit][ERROR] Check: sacct -j $prep_jobid --format=JobID,State,ExitCode,Elapsed" >&2
-      echo "[submit][ERROR] And check slurm output (e.g. slurm-${prep_jobid}.out) in the submission directory." >&2
       exit 1
-      ;;
-  esac
+    fi
+  fi
 
   sleep 10
 done
 
-
 if [[ ! -f "$jobs_file" ]]; then
-  echo "[submit][ERROR] jobs.tsv did not appear at $jobs_file. Check prep logs for job $prep_jobid." >&2
+  st="$(get_state "$prep_jobid" || true)"
+  echo "[submit][ERROR] jobs.tsv did not appear at $jobs_file (prep state=${st:-unknown})." >&2
   exit 1
 fi
 
@@ -185,41 +197,44 @@ if [[ "$n_jobs" -lt 1 ]]; then
   echo "[submit][ERROR] jobs.tsv exists but has 0 lines: $jobs_file" >&2
   exit 1
 fi
-
 echo "[submit] jobs: $n_jobs"
 
-# 3) Submit mapping array (4 cores per plasmid task) — depends on prep
-MAX_ARRAY=1001
+# --- 3) Submit mapping arrays in chunks (MAX_ARRAY_SIZE) ---
+array_jobids=()
 chunk=0
 offset=0
-array_jobids=()
 
-while [[ $offset -lt $n_jobs ]]; do
+map_base_args=("${sbatch_common[@]}" "${sbatch_export[@]}" --dependency=afterok:"$prep_jobid")
+if [[ -n "${PARTITION_MAP:-}" ]]; then map_base_args+=(--partition="${PARTITION_MAP}"); fi
+if [[ -n "${MAP_CPUS_PER_TASK:-}" ]]; then map_base_args+=(--cpus-per-task="${MAP_CPUS_PER_TASK}"); fi
+if [[ -n "${MAP_MEM_PER_CPU:-}" ]]; then map_base_args+=(--mem-per-cpu="${MAP_MEM_PER_CPU}"); fi
+
+while (( offset < n_jobs )); do
   remaining=$((n_jobs - offset))
-  this_chunk=$(( remaining < MAX_ARRAY ? remaining : MAX_ARRAY ))
-  last_index=$((this_chunk - 1))
+  chunk_size=$(( remaining < MAX_ARRAY_SIZE ? remaining : MAX_ARRAY_SIZE ))
 
-  array_jobid=$(sbatch --parsable \
-    --dependency=afterok:"$prep_jobid" \
-    --array=0-${last_index}%${MAX_CONCURRENT} \
-    "${script_dir}/plasmidseq_map_array_SLURM.sh" \
-    "$SCRATCH" "$offset"
+  array_spec="0-$((chunk_size-1))%${max_concurrent}"
+
+  jid=$(sbatch --parsable "${map_base_args[@]}"     --array="$array_spec"     "$MAP_SLURM"     "$SCRATCH" "$offset"
   )
 
-  echo "[submit] map array chunk $chunk: job=$array_jobid offset=$offset size=$this_chunk"
-  array_jobids+=("$array_jobid")
-
-  offset=$((offset + this_chunk))
+  array_jobids+=("$jid")
+  echo "[submit] map array chunk ${chunk}: job=${jid} offset=${offset} size=${chunk_size}"
+  offset=$((offset + chunk_size))
   chunk=$((chunk + 1))
 done
 
-# 4) Submit gather job — depends on array completing successfully
-gather_jobid=$(sbatch --parsable \
-  --dependency=afterok:"$array_jobid" \
-  "${script_dir}/plasmidseq_gather_SLURM.sh" \
-  "$SCRATCH" "$RESULTS" "$plasmidSeqData"
+# --- 4) Gather depends on ALL array chunks ---
+dep="$(IFS=:; echo "${array_jobids[*]}")"
+
+gather_args=("${sbatch_common[@]}" "${sbatch_export[@]}" --dependency=afterok:"$dep")
+if [[ -n "${PARTITION_GATHER:-}" ]]; then gather_args+=(--partition="${PARTITION_GATHER}"); fi
+
+gather_jobid=$(sbatch --parsable "${gather_args[@]}"   "$GATHER_SLURM"   "$SCRATCH" "$RESULTS" "$plasmidSeqData"
 )
 echo "[submit] gather job: $gather_jobid"
 
+# --- Tracking output ---
+job_list="${prep_jobid},$(IFS=,; echo "${array_jobids[*]}"),${gather_jobid}"
 echo "[submit] done."
-echo "[submit] Track with: squeue -j ${prep_jobid},${array_jobid},${gather_jobid}"
+echo "[submit] Track with: squeue -j ${job_list}"

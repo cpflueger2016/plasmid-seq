@@ -11,14 +11,54 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="/mmfs1/data/group/llshared/PlasmidSeq/plasmid-seq/scripts"
-MATCHER="${SCRIPT_DIR}/match_plasmid_fasta_refs_v2.bash"
+# --- Config (optional) ---
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+cfg="${PLASMIDSEQ_CONFIG:-${script_dir}/plasmidseq.config}"
+if [[ -f "$cfg" ]]; then
+  # shellcheck source=/dev/null
+  source "$cfg"
+fi
 
+# --- Environment ---
+if command -v module >/dev/null 2>&1 && [[ -n "${MODULES:-}" ]]; then
+  for m in ${MODULES}; do
+    module load "$m"
+  done
+fi
 
-module load gcc
-conda activate /group/llshared/shared_conda_envs/plasmidseq
-PATH=/group/llshared/shared_conda_envs/plasmidseq:$PATH
-export PATH
+if [[ -n "${CONDA_INIT:-}" && -f "${CONDA_INIT}" ]]; then
+  # shellcheck source=/dev/null
+  source "${CONDA_INIT}"
+fi
+
+if command -v conda >/dev/null 2>&1 && [[ -n "${CONDA_ENV:-}" ]]; then
+  conda activate "${CONDA_ENV}"
+fi
+
+# --- Resolve matcher script ---
+resolve_script() {
+  local explicit="$1" localname="$2" fallback="$3" base_dir="$4"
+  if [[ -n "$explicit" && -f "$explicit" ]]; then
+    echo "$explicit"; return 0
+  fi
+  if [[ -n "$base_dir" && -f "$base_dir/$localname" ]]; then
+    echo "$base_dir/$localname"; return 0
+  fi
+  if [[ -f "$script_dir/$localname" ]]; then
+    echo "$script_dir/$localname"; return 0
+  fi
+  if [[ -n "$fallback" && -f "$fallback" ]]; then
+    echo "$fallback"; return 0
+  fi
+  return 1
+}
+
+PIPE_SCRIPTS="${PIPELINE_SCRIPTS_DIR:-}"
+MATCHER="$(resolve_script "${MATCHER_PATH:-}" "${MATCHER_BASENAME:-match_plasmid_fasta_refs_v2.bash}" "${MATCHER_FALLBACK:-}" "$PIPE_SCRIPTS" || true)"
+if [[ -z "${MATCHER:-}" ]]; then
+  echo "[prep][ERROR] Cannot locate matcher script (set MATCHER_PATH or PIPELINE_SCRIPTS_DIR in config)." >&2
+  exit 1
+fi
 
 usage() {
   echo "Usage: $0 -d <plasmidSeqData_dir> [-t PL_to_fasta.tsv] [-f Fasta_Reference_Files_dir] [-j YYYY-MM-DD]" >&2
@@ -46,8 +86,14 @@ done
 [[ ! -d "$refs" ]] && { echo "[prep][ERROR] Refs dir not found: $refs" >&2; exit 1; }
 
 JOBNAME="plasmidSeq_${jobdate}"
-SCRATCH="${MYSCRATCH}/${JOBNAME}/${SLURM_JOBID}"
-RESULTS="/group/llshared/PlasmidSeq/Results/${JOBNAME}/${SLURM_JOBID}"
+SCRATCH_ROOT="${SCRATCH_BASE:-${MYSCRATCH:-}}"
+SCRATCH="${SCRATCH_ROOT}/${JOBNAME}/${SLURM_JOBID}"
+if [[ -z "${SCRATCH_ROOT:-}" ]]; then
+  echo "[prep][ERROR] SCRATCH_ROOT is empty (set MYSCRATCH or SCRATCH_BASE in config)." >&2
+  exit 1
+fi
+
+RESULTS="${RESULTS_BASE:-/group/llshared/PlasmidSeq/Results}/${JOBNAME}/${SLURM_JOBID}"
 
 mkdir -p "$SCRATCH" "$RESULTS"
 echo "[prep] SCRATCH=$SCRATCH"
@@ -99,7 +145,10 @@ chmod +x "$MATCHER"
 # Create jobs file
 : > jobs.tsv
 for i in */PL*/; do
-  ref=$(find "$(pwd)/${i}" -maxdepth 1 -type f \( -name "*.fa" -o -name "*.fasta" -o -name "na" \) | head -n 1)
+  ref=$(ls -1 "$(pwd)/${i}"/*.fa "$(pwd)/${i}"/*.fasta 2>/dev/null | head -n 1 || true)
+  if [[ -z "${ref:-}" ]]; then
+    ref=$(ls -1 "$(pwd)/${i}"/na 2>/dev/null | head -n 1 || true)
+  fi
   ref=${ref##*/}
 
   one=$(ls ${i}*_R1_*gz); one=${one##*/}
