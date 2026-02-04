@@ -45,7 +45,7 @@ done
 
 # Move everything except refs/junk into results
 cd "$SCRATCH"
-find . -mindepth 1 -maxdepth 1 -type d ! \( -name "Fasta_Reference_Files" -o -name "Stats" -o -name "Reports" \) \
+find . -mindepth 1 -maxdepth 1 -type d ! \( -name "Fasta_Reference_Files" -o -name "Stats" -o -name "Reports" -o -name "Logs" \) \
   -exec mv -t "$RESULTS" {} +
 
 # Optionally build run summary (CSV + HTML) before copying to Aligned.
@@ -57,12 +57,31 @@ if [[ -n "$PLATE_MAP_CSV" ]]; then
     echo "[gather][WARN] summary script not found; skipping run summary: $SUMMARY_SCRIPT"
   else
     echo "[gather] building run summary with plate map: $PLATE_MAP_CSV"
-    if ! python3 "$SUMMARY_SCRIPT" -r "$RESULTS" -m "$PLATE_MAP_CSV"; then
+    if command -v python3 >/dev/null 2>&1; then
+      PYTHON_BIN="python3"
+    elif command -v python >/dev/null 2>&1; then
+      PYTHON_BIN="python"
+    else
+      PYTHON_BIN=""
+    fi
+
+    if [[ -z "$PYTHON_BIN" ]]; then
+      echo "[gather][WARN] no python interpreter found; skipping run summary."
+    elif ! "$PYTHON_BIN" "$SUMMARY_SCRIPT" -r "$RESULTS" -m "$PLATE_MAP_CSV" > "$SCRATCH/Logs/run_summary.log" 2>&1; then
       echo "[gather][WARN] run summary generation failed; continuing gather."
+      tail -n 40 "$SCRATCH/Logs/run_summary.log" || true
+    else
+      echo "[gather] run summary generated: $RESULTS/run_summary.csv and $RESULTS/run_summary.html"
     fi
   fi
 else
   echo "[gather] no plate map CSV provided; skipping run summary."
+fi
+
+# Preserve all gather/map logs in RESULTS for easier debugging
+if [[ -d "$SCRATCH/Logs" ]]; then
+  mkdir -p "$RESULTS/Logs"
+  cp -af "$SCRATCH/Logs/." "$RESULTS/Logs/" || true
 fi
 
 # Copy results also to Run/Aligned (your original logic)
