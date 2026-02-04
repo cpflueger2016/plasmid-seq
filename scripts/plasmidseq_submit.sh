@@ -25,11 +25,13 @@ Optional:
   -t <file>  PL_to_fasta.tsv path (default: ${DEFAULT_TSV})
   -f <dir>   Fasta reference folder path (default: ${DEFAULT_REFS})
   -p <int>   Max concurrent array tasks (default: ${MAX_CONCURRENT})
+  -c <file>  Config file path (default precedence: local config, then plasmidseq.config)
   -l <file>  Submit log file (default: <plasmidSeqData>/plasmidseq_submit_<date>.log)
 
 Example:
   $(basename "$0") -d /home/.../fastqs
   $(basename "$0") -d /home/.../fastqs -t ./PL_to_fasta.tsv -f ./Fasta_Reference_Files -p 80
+  $(basename "$0") -d /home/.../fastqs -c ./plasmidseq.local.config -l ./submit.log
 EOF
 }
 
@@ -194,7 +196,7 @@ echo "[submit] jobs: $n_jobs"
 MAX_ARRAY=1001
 chunk=0
 offset=0
-array_jobids=()
+array_jobids_dep=""
 
 while [[ $offset -lt $n_jobs ]]; do
   remaining=$((n_jobs - offset))
@@ -210,7 +212,11 @@ while [[ $offset -lt $n_jobs ]]; do
     "$SCRATCH" "$offset"
   )
   echo "[submit] map array chunk $chunk: job=$array_jobid offset=$offset size=$this_chunk"
-  array_jobids+=("$array_jobid")
+  if [[ -z "$array_jobids_dep" ]]; then
+    array_jobids_dep="$array_jobid"
+  else
+    array_jobids_dep="${array_jobids_dep}:$array_jobid"
+  fi
 
   offset=$((offset + this_chunk))
   chunk=$((chunk + 1))
@@ -218,7 +224,7 @@ done
 
 # 4) Submit gather job — depends on array completing successfully
 gather_jobid=$(sbatch --parsable \
-  --dependency=afterok:"$array_jobid" \
+  --dependency=afterok:"$array_jobids_dep" \
   --output="$SCRATCH/Logs/slurm-%A.out" \
   --error="$SCRATCH/Logs/slurm-%A.out" \
   "${script_dir}/plasmidseq_gather_SLURM.sh" \
@@ -227,4 +233,4 @@ gather_jobid=$(sbatch --parsable \
 echo "[submit] gather job: $gather_jobid"
 
 echo "[submit] done."
-echo "[submit] Track with: squeue -j ${prep_jobid},${array_jobid},${gather_jobid}"
+echo "[submit] Track with: squeue -j ${prep_jobid},${array_jobids_dep//:/,},${gather_jobid}"

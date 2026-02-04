@@ -73,7 +73,11 @@ mkdir -p "$SCRATCH/Logs"
 line_num=$((OFFSET + SLURM_ARRAY_TASK_ID + 1))
 
 # columns: folder   ref   R1   R2   uID
-IFS=$'	' read -r folder ref r1 r2 uid < <(sed -n "${line_num}p" "$JOBS")
+# Use awk field extraction so empty tab fields (e.g. missing ref) are preserved.
+job_line=$(awk -F'\t' -v n="$line_num" '
+  NR == n { printf "%s\034%s\034%s\034%s\034%s", $1, $2, $3, $4, $5; exit }
+' "$JOBS")
+IFS=$'\034' read -r folder ref r1 r2 uid <<< "${job_line:-}"
 
 if [[ -z "${folder:-}" || -z "${uid:-}" ]]; then
   echo "[map][ERROR] No job entry found for line ${line_num} (OFFSET=${OFFSET}, task=${SLURM_ARRAY_TASK_ID})." >&2

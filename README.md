@@ -147,6 +147,15 @@ scripts/plasmidseq_submit.sh \
   -f /path/to/Fasta_Reference_Files
 ```
 
+Use a specific config file and custom submit log path:
+
+```bash
+scripts/plasmidseq_submit.sh \
+  -d /path/to/fastqs \
+  -c scripts/plasmidseq.local.config \
+  -l /path/to/plasmidseq_submit.log
+```
+
 Throttle concurrency (max tasks running at once):
 
 ```bash
@@ -163,6 +172,33 @@ If you have job IDs, track directly:
 
 ```bash
 squeue -j <prep_jobid>,<array_jobid>,<gather_jobid>
+```
+
+Submit options (from `scripts/plasmidseq_submit.sh -h`):
+- `-d <dir>` input FASTQ folder (required)
+- `-t <file>` `PL_to_fasta.tsv` override
+- `-f <dir>` reference FASTA folder override
+- `-p <int>` max concurrent array tasks
+- `-c <file>` config file override
+- `-l <file>` submit log file path
+- `-h` help
+
+Reference help output:
+
+```text
+Usage:
+  plasmidseq_submit.sh -d <plasmidSeqData_dir> [options]
+
+Required:
+  -d <dir>   Folder containing Project folders / fastqs to stage into scratch
+
+Optional:
+  -t <file>  PL_to_fasta.tsv path (default: from config DEFAULT_TSV)
+  -f <dir>   Fasta reference folder path (default: from config DEFAULT_REFS)
+  -p <int>   Max concurrent array tasks (default: from config MAX_CONCURRENT_DEFAULT)
+  -c <file>  Config file path (default precedence: local config, then plasmidseq.config)
+  -l <file>  Submit log file (default: <plasmidSeqData>/plasmidseq_submit_<date>.log)
+  -h         Show help
 ```
 
 ---
@@ -225,7 +261,8 @@ There are multiple logging layers:
 
 - **submit wrapper** (`plasmidseq_submit.sh`)
   - prints a concise “submission plan” (jobdate, input dir, TSV/refs, job IDs)
-  - recommended: tee stdout to a log file so job IDs and resolved paths are captured
+  - automatically mirrors stdout/stderr to a log file (default: `<plasmidSeqData>/plasmidseq_submit_<date>.log`)
+  - use `-l` to set a custom submit log path
 
 - **prep job log** (Slurm output)
   - prints scratch and results paths, number of FASTQs staged, jobs.tsv count
