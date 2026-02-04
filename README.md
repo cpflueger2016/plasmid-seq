@@ -23,6 +23,7 @@ The workflow is optimized for Slurm/HPC:
 - [What the pipeline does](#what-the-pipeline-does)
 - [Outputs](#outputs)
 - [Logging](#logging)
+- [Run Summary Report (CSV + HTML)](#run-summary-report-csv--html)
 - [Handling missing/ambiguous references](#handling-missingambiguous-references)
 - [Performance + Slurm notes](#performance--slurm-notes)
 - [Troubleshooting](#troubleshooting)
@@ -156,6 +157,14 @@ scripts/plasmidseq_submit.sh \
   -l /path/to/plasmidseq_submit.log
 ```
 
+Enable automatic run summary generation during gather:
+
+```bash
+scripts/plasmidseq_submit.sh \
+  -d /path/to/fastqs \
+  -w /mmfs1/data/group/llshared/PlasmidSeq/PL_to_plate_position.csv
+```
+
 Throttle concurrency (max tasks running at once):
 
 ```bash
@@ -180,6 +189,7 @@ Submit options (from `scripts/plasmidseq_submit.sh -h`):
 - `-f <dir>` reference FASTA folder override
 - `-p <int>` max concurrent array tasks
 - `-c <file>` config file override
+- `-w <file>` plate map CSV for auto run summary
 - `-l <file>` submit log file path
 - `-h` help
 
@@ -197,6 +207,7 @@ Optional:
   -f <dir>   Fasta reference folder path (default: from config DEFAULT_REFS)
   -p <int>   Max concurrent array tasks (default: from config MAX_CONCURRENT_DEFAULT)
   -c <file>  Config file path (default precedence: local config, then plasmidseq.config)
+  -w <file>  Plate map CSV for run summary (columns: PLid,plate,position)
   -l <file>  Submit log file (default: <plasmidSeqData>/plasmidseq_submit_<date>.log)
   -h         Show help
 ```
@@ -221,6 +232,7 @@ At a high level:
 
 3. **Gather job**
    - Collects outputs into a single results directory
+   - Optionally generates `run_summary.csv` + `run_summary.html` when `-w <plate_map.csv>` is provided
    - Copies key run-level files (e.g. `jobs.tsv`, `plasmid_fasta_match.log`)
    - Deletes scratch run directory (safely)
 
@@ -273,6 +285,38 @@ There are multiple logging layers:
 
 - **matcher log**
   - `plasmid_fasta_match.log` in scratch (and copied into results)
+
+---
+
+## Run Summary Report (CSV + HTML)
+
+Generate a per-run summary table + report page with:
+- total reads per sample (from `*_fastp_report.json`)
+- mapping rate (from `*_bowtie2.log`, when present)
+- reference/plannotate status flags
+- bar graph of reads per sample
+- 96-well plate issue view (using `PL_to_plate_position.csv`)
+
+Run:
+
+```bash
+scripts/plasmidseq_run_summary.py \
+  -r /group/llshared/PlasmidSeq/Results/plasmidSeq_YYYY-MM-DD/<prep_jobid> \
+  -m /mmfs1/data/group/llshared/PlasmidSeq/PL_to_plate_position.csv
+```
+
+Outputs (written into the run folder by default):
+- `run_summary.csv`
+- `run_summary.html`
+
+Optional:
+- `--low-map-threshold 80` sets the warning cutoff for mapping %
+- `-o /path/to/output_prefix` writes `<prefix>.csv` and `<prefix>.html`
+
+Automatic mode:
+- pass `-w /path/to/PL_to_plate_position.csv` to `plasmidseq_submit.sh`
+- gather will run `plasmidseq_run_summary.py` before copying to `Aligned`
+- summary files are copied to `Aligned` with the rest of run results
 
 ---
 

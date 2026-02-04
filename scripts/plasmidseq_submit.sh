@@ -11,6 +11,7 @@ plasmidSeqData=""
 tsv=""
 refs=""
 PLASMIDSEQ_CONFIG=""
+PLATE_MAP_CSV=""
 
 
 usage() {
@@ -26,23 +27,26 @@ Optional:
   -f <dir>   Fasta reference folder path (default: ${DEFAULT_REFS})
   -p <int>   Max concurrent array tasks (default: ${MAX_CONCURRENT})
   -c <file>  Config file path (default precedence: local config, then plasmidseq.config)
+  -w <file>  Plate map CSV for run summary (columns: PLid,plate,position)
   -l <file>  Submit log file (default: <plasmidSeqData>/plasmidseq_submit_<date>.log)
 
 Example:
   $(basename "$0") -d /home/.../fastqs
   $(basename "$0") -d /home/.../fastqs -t ./PL_to_fasta.tsv -f ./Fasta_Reference_Files -p 80
   $(basename "$0") -d /home/.../fastqs -c ./plasmidseq.local.config -l ./submit.log
+  $(basename "$0") -d /home/.../fastqs -w /group/llshared/PlasmidSeq/PL_to_plate_position.csv
 EOF
 }
 
 
-while getopts ":d:t:f:p:l:c:h" opt; do
+while getopts ":d:t:f:p:l:c:w:h" opt; do
   case "$opt" in
     d) plasmidSeqData="$OPTARG" ;;
     t) tsv="$OPTARG" ;;
     f) refs="$OPTARG" ;;
     p) MAX_CONCURRENT="$OPTARG" ;;
     c) PLASMIDSEQ_CONFIG="$OPTARG" ;;
+    w) PLATE_MAP_CSV="$OPTARG" ;;
     l) log_file="$OPTARG" ;;
     h) usage; exit 0 ;;
     *) usage; exit 2 ;;
@@ -116,6 +120,10 @@ if [[ ! -d "$refs" ]]; then
   echo "[submit][ERROR] Refs dir not found: $refs" >&2
   exit 1
 fi
+if [[ -n "$PLATE_MAP_CSV" && ! -f "$PLATE_MAP_CSV" ]]; then
+  echo "[submit][ERROR] Plate map CSV not found: $PLATE_MAP_CSV" >&2
+  exit 1
+fi
 
 # --- logging: mirror stdout/stderr to a file via tee
 if [[ -z "${log_file}" ]]; then
@@ -130,6 +138,7 @@ echo "[submit] jobdate=$jobdate"
 echo "[submit] plasmidSeqData=$plasmidSeqData"
 echo "[submit] TSV=$tsv"
 echo "[submit] REFS=$refs"
+echo "[submit] PLATE_MAP_CSV=${PLATE_MAP_CSV:-<none>}"
 echo "[submit] max_concurrent=$MAX_CONCURRENT"
 
 # 1) Submit prep job (writes jobs.tsv into scratch)
@@ -228,7 +237,7 @@ gather_jobid=$(sbatch --parsable \
   --output="$SCRATCH/Logs/slurm-%A.out" \
   --error="$SCRATCH/Logs/slurm-%A.out" \
   "${script_dir}/plasmidseq_gather_SLURM.sh" \
-  "$SCRATCH" "$RESULTS" "$plasmidSeqData"
+  "$SCRATCH" "$RESULTS" "$plasmidSeqData" "${PLATE_MAP_CSV:-}"
 )
 echo "[submit] gather job: $gather_jobid"
 

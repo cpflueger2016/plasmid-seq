@@ -21,6 +21,7 @@ fi
 SCRATCH="$1"
 RESULTS="$2"
 plasmidSeqData="$3"
+PLATE_MAP_CSV="${4:-}"
 
 echo "[gather] started: $(date)"
 echo "[gather] SCRATCH=$SCRATCH"
@@ -46,6 +47,23 @@ done
 cd "$SCRATCH"
 find . -mindepth 1 -maxdepth 1 -type d ! \( -name "Fasta_Reference_Files" -o -name "Stats" -o -name "Reports" \) \
   -exec mv -t "$RESULTS" {} +
+
+# Optionally build run summary (CSV + HTML) before copying to Aligned.
+SUMMARY_SCRIPT="${script_dir}/plasmidseq_run_summary.py"
+if [[ -n "$PLATE_MAP_CSV" ]]; then
+  if [[ ! -f "$PLATE_MAP_CSV" ]]; then
+    echo "[gather][WARN] plate map CSV not found; skipping run summary: $PLATE_MAP_CSV"
+  elif [[ ! -f "$SUMMARY_SCRIPT" ]]; then
+    echo "[gather][WARN] summary script not found; skipping run summary: $SUMMARY_SCRIPT"
+  else
+    echo "[gather] building run summary with plate map: $PLATE_MAP_CSV"
+    if ! python3 "$SUMMARY_SCRIPT" -r "$RESULTS" -m "$PLATE_MAP_CSV"; then
+      echo "[gather][WARN] run summary generation failed; continuing gather."
+    fi
+  fi
+else
+  echo "[gather] no plate map CSV provided; skipping run summary."
+fi
 
 # Copy results also to Run/Aligned (your original logic)
 AlignedData=${plasmidSeqData/fastq*/}"/Aligned"
