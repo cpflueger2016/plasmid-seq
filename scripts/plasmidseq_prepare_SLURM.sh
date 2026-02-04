@@ -45,6 +45,9 @@ done
 [[ ! -f "$tsv" ]] && { echo "[prep][ERROR] TSV not found: $tsv" >&2; exit 1; }
 [[ ! -d "$refs" ]] && { echo "[prep][ERROR] Refs dir not found: $refs" >&2; exit 1; }
 
+# Normalize to an absolute path so rsync source stays valid after changing cwd.
+plasmidSeqData="$(cd "$plasmidSeqData" && pwd -P)"
+
 JOBNAME="plasmidSeq_${jobdate}"
 SCRATCH="${MYSCRATCH}/${JOBNAME}/${SLURM_JOBID}"
 RESULTS="/group/llshared/PlasmidSeq/Results/${JOBNAME}/${SLURM_JOBID}"
@@ -55,6 +58,7 @@ mkdir -p "$SCRATCH/Logs"
 exec > >(tee -a "$SCRATCH/Logs/slurm-${SLURM_JOBID}.out") 2>&1
 echo "[prep] SCRATCH=$SCRATCH"
 echo "[prep] RESULTS=$RESULTS"
+echo "[prep] plasmidSeqData=$plasmidSeqData"
 
 # stage inputs into scratch
 cp -f "$tsv" "$SCRATCH/PL_to_fasta.tsv"

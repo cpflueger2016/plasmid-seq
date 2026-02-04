@@ -40,8 +40,16 @@ PIPE_SCRIPTS="${PIPELINE_SCRIPTS_DIR:-}"
 MAPPER="$(resolve_script "${MAPPER_PATH:-}" "${MAPPER_BASENAME:-plasmidseq_mapper_PE.sh}" "${MAPPER_FALLBACK:-}" "$PIPE_SCRIPTS" || true)"
 if [[ -z "${MAPPER:-}" ]]; then
   echo "[map][ERROR] Cannot locate mapper script (set MAPPER_PATH or PIPELINE_SCRIPTS_DIR in config)." >&2
+  echo "[map][ERROR] cfg=${cfg}" >&2
+  echo "[map][ERROR] script_dir=${script_dir}" >&2
+  echo "[map][ERROR] PIPELINE_SCRIPTS_DIR=${PIPE_SCRIPTS:-<empty>}" >&2
+  echo "[map][ERROR] MAPPER_BASENAME=${MAPPER_BASENAME:-plasmidseq_mapper_PE.sh}" >&2
+  echo "[map][ERROR] Tried: ${MAPPER_PATH:-<empty>}, ${PIPE_SCRIPTS:-<empty>}/${MAPPER_BASENAME:-plasmidseq_mapper_PE.sh}, ${script_dir}/${MAPPER_BASENAME:-plasmidseq_mapper_PE.sh}, ${MAPPER_FALLBACK:-<empty>}" >&2
   exit 1
 fi
+
+# Mapper runs in a child bash process, so export config vars it consumes.
+export CONDA_ENV CONDA_ENV_PLANNOTATE CONDA_INIT MODULES
 
 # --- Environment ---
 if command -v module >/dev/null 2>&1 && [[ -n "${MODULES:-}" ]]; then
