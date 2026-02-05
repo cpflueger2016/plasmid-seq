@@ -13,6 +13,8 @@ cleanSPADES=1
 minLengthSPADES=0
 uniqueID=""
 runUnicycler=0
+scriptDir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+fastaCleaner="${scriptDir}/plasmidseq_clean_fasta_headers.sh"
 
 ### Check dependencies
 
@@ -217,7 +219,18 @@ fastp -w 4 -q ${qval} \
 ### Reference mapping if fasta reference file was provided
 
 if [ "${skipping}" == "FALSE" ]; then
-	# 2. BBMap reference mapping (circular-aware via usemodulo)
+	# 2. Clean FASTA headers for robust mapping compatibility
+	if [[ ! -x "${fastaCleaner}" ]]; then
+		echo "Error: FASTA header cleaner script not found/executable: ${fastaCleaner}" >&2
+		exit 1
+	fi
+
+	cleanFastaRef="${fastaRefFile%.*}_clean.fa"
+	"${fastaCleaner}" -i "${fastaRefFile}" -o "${cleanFastaRef}" \
+		> "${fastQ_f%_S[0-9]*}_fasta_header_cleanup.log" 2>&1
+	fastaRef="${cleanFastaRef}"
+
+	# 3. BBMap reference mapping (circular-aware via usemodulo)
 
 	bbmap.sh ref=${fastaRef} \
 				in="${fastQ_f%_S[0-9]*}_R1_trimmed.fastq" \
