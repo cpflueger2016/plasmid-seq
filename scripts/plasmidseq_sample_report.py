@@ -478,22 +478,43 @@ def render_html(
     const asm = {json.dumps(asm_plot)};
     const c = document.getElementById("cov");
     const ctx = c.getContext("2d");
-    const W = c.width, H = c.height, pad = 30;
+    const W = c.width, H = c.height;
+    const padL = 72, padR = 30, padT = 20, padB = 30;
     const maxY = Math.max(1, ...read, ...asm);
+    const readMax = Math.max(0, ...read);
+    const readMean = read.length ? (read.reduce((a, b) => a + b, 0) / read.length) : 0;
+    function yFor(v) {{
+      return H - padB - (H - padT - padB) * (v / maxY);
+    }}
     function draw(arr, color) {{
       if (!arr.length) return;
       ctx.beginPath();
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       for (let i = 0; i < arr.length; i++) {{
-        const x = pad + (W - 2*pad) * (i / Math.max(1, arr.length - 1));
-        const y = H - pad - (H - 2*pad) * (arr[i] / maxY);
+        const x = padL + (W - padL - padR) * (i / Math.max(1, arr.length - 1));
+        const y = yFor(arr[i]);
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }}
       ctx.stroke();
     }}
     ctx.fillStyle = "white"; ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = "#d1d5db"; ctx.strokeRect(pad, pad, W-2*pad, H-2*pad);
+    ctx.strokeStyle = "#d1d5db"; ctx.strokeRect(padL, padT, W - padL - padR, H - padT - padB);
+    ctx.strokeStyle = "#e5e7eb";
+    ctx.lineWidth = 1;
+    const yMax = yFor(readMax);
+    const yMean = yFor(readMean);
+    const yZero = yFor(0);
+    ctx.beginPath(); ctx.moveTo(padL, yMax); ctx.lineTo(W - padR, yMax); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(padL, yMean); ctx.lineTo(W - padR, yMean); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(padL, yZero); ctx.lineTo(W - padR, yZero); ctx.stroke();
+    ctx.fillStyle = "#374151";
+    ctx.font = "12px Helvetica, Arial, sans-serif";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`max read: ${readMax.toFixed(1)}`, padL - 6, yMax);
+    ctx.fillText(`mean read: ${readMean.toFixed(1)}`, padL - 6, yMean);
+    ctx.fillText("0", padL - 6, yZero);
     draw(read, "#2563eb");
     draw(asm, "#f97316");
   </script>
