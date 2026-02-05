@@ -512,8 +512,8 @@ def render_html(
     ctx.font = "12px Helvetica, Arial, sans-serif";
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
-    ctx.fillText(`max read: ${readMax.toFixed(1)}`, padL - 6, yMax);
-    ctx.fillText(`mean read: ${readMean.toFixed(1)}`, padL - 6, yMean);
+    ctx.fillText("max read: " + readMax.toFixed(1), padL - 6, yMax);
+    ctx.fillText("mean read: " + readMean.toFixed(1), padL - 6, yMean);
     ctx.fillText("0", padL - 6, yZero);
     draw(read, "#2563eb");
     draw(asm, "#f97316");
