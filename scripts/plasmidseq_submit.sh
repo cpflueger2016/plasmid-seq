@@ -12,6 +12,8 @@ tsv=""
 refs=""
 PLASMIDSEQ_CONFIG=""
 PLATE_MAP_CSV=""
+CLI_ENABLE_VARIANTS=""
+CLI_ENABLE_SNPEFF=""
 
 
 usage() {
@@ -29,17 +31,22 @@ Optional:
   -c <file>  Config file path (default precedence: local config, then plasmidseq.config)
   -w <file>  Plate map CSV for run summary (columns: PLid,plate,position)
   -l <file>  Submit log file (default: <plasmidSeqData>/plasmidseq_submit_<date>.log)
+  -V         Enable VarScan variant calling (overrides config)
+  -N         Disable VarScan variant calling (overrides config)
+  -E         Enable snpEff annotation (overrides config; implies variants on)
+  -S         Disable snpEff annotation (overrides config)
 
 Example:
   $(basename "$0") -d /home/.../fastqs
   $(basename "$0") -d /home/.../fastqs -t ./PL_to_fasta.tsv -f ./Fasta_Reference_Files -p 80
   $(basename "$0") -d /home/.../fastqs -c ./plasmidseq.local.config -l ./submit.log
   $(basename "$0") -d /home/.../fastqs -w /group/llshared/PlasmidSeq/PL_to_plate_position.csv
+  $(basename "$0") -d /home/.../fastqs -V -E
 EOF
 }
 
 
-while getopts ":d:t:f:p:l:c:w:h" opt; do
+while getopts ":d:t:f:p:l:c:w:VNESh" opt; do
   case "$opt" in
     d) plasmidSeqData="$OPTARG" ;;
     t) tsv="$OPTARG" ;;
@@ -48,6 +55,10 @@ while getopts ":d:t:f:p:l:c:w:h" opt; do
     c) PLASMIDSEQ_CONFIG="$OPTARG" ;;
     w) PLATE_MAP_CSV="$OPTARG" ;;
     l) log_file="$OPTARG" ;;
+    V) CLI_ENABLE_VARIANTS="1" ;;
+    N) CLI_ENABLE_VARIANTS="0" ;;
+    E) CLI_ENABLE_SNPEFF="1" ;;
+    S) CLI_ENABLE_SNPEFF="0" ;;
     h) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
@@ -112,6 +123,24 @@ MAX_CONCURRENT="${MAX_CONCURRENT:-${MAX_CONCURRENT_DEFAULT:-50}}"
 RESULTS_BASE="${RESULTS_BASE:-/group/llshared/PlasmidSeq/Results}"
 MAX_ARRAY_SIZE="${MAX_ARRAY_SIZE:-1001}"
 
+# CLI flags override config defaults.
+if [[ -n "${CLI_ENABLE_VARIANTS}" ]]; then
+  ENABLE_VARIANTS="${CLI_ENABLE_VARIANTS}"
+fi
+if [[ -n "${CLI_ENABLE_SNPEFF}" ]]; then
+  ENABLE_SNPEFF="${CLI_ENABLE_SNPEFF}"
+fi
+# snpEff requires variant calling output; auto-enable unless user explicitly forced off.
+if [[ "${ENABLE_SNPEFF:-0}" == "1" && "${ENABLE_VARIANTS:-0}" != "1" ]]; then
+  if [[ "${CLI_ENABLE_VARIANTS:-}" == "0" ]]; then
+    echo "[submit][ERROR] Conflicting options: snpEff enabled (-E) but variants disabled (-N)." >&2
+    exit 2
+  fi
+  ENABLE_VARIANTS="1"
+  echo "[submit] enabling variants because snpEff is enabled"
+fi
+export ENABLE_VARIANTS ENABLE_SNPEFF
+
 if [[ ! -f "$tsv" ]]; then
   echo "[submit][ERROR] TSV not found: $tsv" >&2
   exit 1
@@ -140,6 +169,8 @@ echo "[submit] TSV=$tsv"
 echo "[submit] REFS=$refs"
 echo "[submit] PLATE_MAP_CSV=${PLATE_MAP_CSV:-<none>}"
 echo "[submit] max_concurrent=$MAX_CONCURRENT"
+echo "[submit] ENABLE_VARIANTS=${ENABLE_VARIANTS:-0}"
+echo "[submit] ENABLE_SNPEFF=${ENABLE_SNPEFF:-0}"
 
 # 1) Submit prep job (writes jobs.tsv into scratch)
 prep_jobid=$(sbatch --parsable \
