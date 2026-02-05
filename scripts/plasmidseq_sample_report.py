@@ -311,6 +311,52 @@ def parse_snpeff_impacts(path: Path) -> Dict[str, int]:
     return impacts
 
 
+def parse_varscan_summary(sample_dir: Path, sample_name: str) -> Dict[str, str]:
+    summary_path = sample_dir / f"{sample_name}_varscan_summary.tsv"
+    out = {"snpeff_status": "", "snpeff_vcf": ""}
+    if not summary_path.exists():
+        return out
+    lines = [ln.strip() for ln in summary_path.read_text(encoding="utf-8", errors="ignore").splitlines() if ln.strip()]
+    if len(lines) < 2:
+        return out
+    header = lines[0].split("\t")
+    values = lines[1].split("\t")
+    row = dict(zip(header, values))
+    out["snpeff_status"] = row.get("snpeff_status", "")
+    out["snpeff_vcf"] = row.get("snpeff_vcf", "")
+    return out
+
+
+def parse_high_conf_variant_positions(path: Path, min_freq_pct: float = 75.0, min_dp: int = 20) -> List[int]:
+    positions: List[int] = []
+    if not path.exists():
+        return positions
+    with path.open(encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if not line.strip() or line.startswith("#"):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 10:
+                continue
+            filt = parts[6]
+            fmt = parts[8].split(":")
+            sample = parts[9].split(":")
+            fields = {k: v for k, v in zip(fmt, sample)}
+            gt = fields.get("GT", "")
+            dp_s = fields.get("DP", "0")
+            freq_s = fields.get("FREQ", "0").rstrip("%")
+            try:
+                pos = int(parts[1])
+                dp = int(float(dp_s))
+                freq = float(freq_s)
+            except ValueError:
+                continue
+            is_high = (filt == "PASS") and dp >= min_dp and (gt == "1/1" or freq >= min_freq_pct)
+            if is_high:
+                positions.append(pos)
+    return positions
+
+
 def parse_variant_outputs(sample_dir: Path, sample_name: str) -> Dict[str, object]:
     snps_vcf = sample_dir / f"{sample_name}_varscan_snps.vcf"
     indels_vcf = sample_dir / f"{sample_name}_varscan_indels.vcf"
@@ -322,19 +368,32 @@ def parse_variant_outputs(sample_dir: Path, sample_name: str) -> Dict[str, objec
     merged_count = count_vcf_records(merged_vcf)
     snpeff_count = count_vcf_records(snpeff_vcf)
     impact_counts = parse_snpeff_impacts(snpeff_vcf)
+    summary = parse_varscan_summary(sample_dir, sample_name)
+    high_conf_snps = parse_high_conf_variant_positions(snps_vcf)
+    high_conf_indels = parse_high_conf_variant_positions(indels_vcf)
+
+    snpeff_status = "present" if snpeff_vcf.exists() else "missing"
+    if summary.get("snpeff_status"):
+        snpeff_status = summary["snpeff_status"]
+    snpeff_vcf_name = str(snpeff_vcf.name) if snpeff_vcf.exists() else (summary.get("snpeff_vcf") or "")
 
     return {
         "enabled_outputs_present": any([snps_vcf.exists(), indels_vcf.exists(), merged_vcf.exists()]),
         "snps_vcf": str(snps_vcf.name) if snps_vcf.exists() else "",
         "indels_vcf": str(indels_vcf.name) if indels_vcf.exists() else "",
         "merged_vcf": str(merged_vcf.name) if merged_vcf.exists() else "",
-        "snpeff_vcf": str(snpeff_vcf.name) if snpeff_vcf.exists() else "",
-        "snpeff_status": "present" if snpeff_vcf.exists() else "missing",
+        "snpeff_vcf": snpeff_vcf_name,
+        "snpeff_status": snpeff_status,
         "snp_count": snp_count,
         "indel_count": indel_count,
         "total_variants": merged_count if merged_count else (snp_count + indel_count),
         "annotated_variant_count": snpeff_count,
         "snpeff_impact_counts": impact_counts,
+        "high_confidence_snp_count": len(high_conf_snps),
+        "high_confidence_indel_count": len(high_conf_indels),
+        "high_confidence_total": len(high_conf_snps) + len(high_conf_indels),
+        "high_confidence_snp_positions": high_conf_snps,
+        "high_confidence_indel_positions": high_conf_indels,
     }
 
 
@@ -463,19 +522,30 @@ def render_html(
       <tr><td>Reference Median Depth</td><td>{report["coverage"]["reference_read_depth"]["median_depth"]}</td></tr>
       <tr><td>Assembly Mean Depth</td><td>{report["coverage"]["assembly_to_reference_depth"]["mean_depth"]}</td></tr>
       <tr><td>Assembly Median Depth</td><td>{report["coverage"]["assembly_to_reference_depth"]["median_depth"]}</td></tr>
+      <tr><td>Assembly Breadth >=1x %</td><td>{report["coverage"]["assembly_to_reference_depth"]["at_1x_pct"]}</td></tr>
       <tr><td>Zero Coverage Regions</td><td>{len(report["coverage"]["zero_coverage_regions"])}</td></tr>
       <tr><td>Low Coverage Regions</td><td>{len(report["coverage"]["low_coverage_regions"])}</td></tr>
       <tr><td>VarScan SNPs</td><td>{report["variants"]["snp_count"]}</td></tr>
       <tr><td>VarScan Indels</td><td>{report["variants"]["indel_count"]}</td></tr>
       <tr><td>Total Variants</td><td>{report["variants"]["total_variants"]}</td></tr>
+      <tr><td>High-confidence SNP/INDEL</td><td>{report["variants"]["high_confidence_snp_count"]}/{report["variants"]["high_confidence_indel_count"]}</td></tr>
       <tr><td>snpEff Status</td><td>{report["variants"]["snpeff_status"]}</td></tr>
       <tr><td>snpEff HIGH/MODERATE</td><td>{report["variants"]["snpeff_impact_counts"]["HIGH"]}/{report["variants"]["snpeff_impact_counts"]["MODERATE"]}</td></tr>
     </table>
   </div>
 
+  <div class="card">
+    <b>High-confidence variant positions on reference ({total_bp} bp)</b>
+    <canvas id="var" width="1600" height="140" style="width: 100%; border: 1px solid #d1d5db; border-radius: 8px;"></canvas>
+    <div class="legend">Blue ticks: high-confidence SNPs | Orange ticks: high-confidence INDELs</div>
+  </div>
+
   <script>
     const read = {json.dumps(read_plot)};
     const asm = {json.dumps(asm_plot)};
+    const snpPos = {json.dumps(report["variants"]["high_confidence_snp_positions"])};
+    const indelPos = {json.dumps(report["variants"]["high_confidence_indel_positions"])};
+    const totalBp = {total_bp};
     const c = document.getElementById("cov");
     const ctx = c.getContext("2d");
     const W = c.width, H = c.height;
@@ -517,6 +587,37 @@ def render_html(
     ctx.fillText("0", padL - 6, yZero);
     draw(read, "#2563eb");
     draw(asm, "#f97316");
+
+    const v = document.getElementById("var");
+    const vx = v.getContext("2d");
+    const VW = v.width, VH = v.height;
+    const vPadL = 72, vPadR = 30, vPadT = 16, vPadB = 24;
+    const axisY = VH - vPadB;
+    vx.fillStyle = "white"; vx.fillRect(0, 0, VW, VH);
+    vx.strokeStyle = "#d1d5db"; vx.strokeRect(vPadL, vPadT, VW - vPadL - vPadR, axisY - vPadT);
+    vx.strokeStyle = "#9ca3af";
+    vx.beginPath(); vx.moveTo(vPadL, axisY); vx.lineTo(VW - vPadR, axisY); vx.stroke();
+    vx.fillStyle = "#374151";
+    vx.font = "12px Helvetica, Arial, sans-serif";
+    vx.textAlign = "right";
+    vx.fillText("0", vPadL - 6, axisY + 4);
+    vx.fillText(String(totalBp), VW - vPadR, axisY + 16);
+    function xForPos(pos) {{
+      return vPadL + (VW - vPadL - vPadR) * ((Math.max(1, pos) - 1) / Math.max(1, totalBp - 1));
+    }}
+    function drawTicks(arr, color, topY) {{
+      vx.strokeStyle = color;
+      vx.lineWidth = 2;
+      for (let i = 0; i < arr.length; i++) {{
+        const x = xForPos(arr[i]);
+        vx.beginPath();
+        vx.moveTo(x, axisY);
+        vx.lineTo(x, topY);
+        vx.stroke();
+      }}
+    }}
+    drawTicks(snpPos, "#2563eb", vPadT + 12);
+    drawTicks(indelPos, "#f97316", vPadT + 30);
   </script>
 </body>
 </html>
@@ -672,6 +773,9 @@ def main() -> int:
                 "mean_depth": round(asm_cov["mean_depth"], 3),
                 "median_depth": round(asm_cov["median_depth"], 3),
                 "max_depth": round(asm_cov["max_depth"], 3),
+                "at_1x_pct": round(asm_cov["at_1x_pct"], 3),
+                "at_10x_pct": round(asm_cov["at_10x_pct"], 3),
+                "at_30x_pct": round(asm_cov["at_30x_pct"], 3),
             },
             "breadth": {
                 "at_1x_pct": round(read_cov["at_1x_pct"], 3),
