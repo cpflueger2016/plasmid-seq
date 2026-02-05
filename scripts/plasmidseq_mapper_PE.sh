@@ -491,20 +491,25 @@ if [[ "${ENABLE_VARIANTS:-0}" == "1" ]]; then
 			elif [[ -z "${SNPEFF_DB:-}" ]]; then
 				echo "[WARN] ENABLE_SNPEFF=1 but SNPEFF_DB is empty; skipping snpEff." | tee -a "${varscan_log}"
 				snpeff_status="missing_db"
-			elif command -v "${SNPEFF_BIN:-snpEff}" >/dev/null 2>&1; then
-				echo "[variants] running snpEff (${SNPEFF_BIN:-snpEff} ${SNPEFF_DB}) on ${merged_vcf}" | tee -a "${varscan_log}"
-				snpeff_cmd=("${SNPEFF_BIN:-snpEff}")
-				if [[ -n "${SNPEFF_CONFIG_FILE:-}" ]]; then
-					snpeff_cmd+=("-c" "${SNPEFF_CONFIG_FILE}")
-				fi
-				if [[ -n "${SNPEFF_DATA_DIR:-}" ]]; then
-					snpeff_cmd+=("-dataDir" "${SNPEFF_DATA_DIR}")
-				fi
-				snpeff_cmd+=("${SNPEFF_DB}" "${merged_vcf}")
-				if "${snpeff_cmd[@]}" > "${snpeff_vcf}" 2>> "${varscan_log}"; then
-					snpeff_status="ok"
-				else
-					echo "[WARN] snpEff failed for ${sampleBase}; see ${varscan_log}" | tee -a "${varscan_log}"
+				elif command -v "${SNPEFF_BIN:-snpEff}" >/dev/null 2>&1; then
+					echo "[variants] running snpEff (${SNPEFF_BIN:-snpEff} ${SNPEFF_DB}) on ${merged_vcf}" | tee -a "${varscan_log}"
+					snpeff_cmd=("${SNPEFF_BIN:-snpEff}")
+					snpeff_env=()
+					if [[ -n "${SNPEFF_JAVA_HOME:-}" && -x "${SNPEFF_JAVA_HOME}/bin/java" ]]; then
+						echo "[variants] using snpEff JAVA_HOME=${SNPEFF_JAVA_HOME}" | tee -a "${varscan_log}"
+						snpeff_env=(env "JAVA_HOME=${SNPEFF_JAVA_HOME}" "PATH=${SNPEFF_JAVA_HOME}/bin:${PATH}")
+					fi
+					if [[ -n "${SNPEFF_CONFIG_FILE:-}" ]]; then
+						snpeff_cmd+=("-c" "${SNPEFF_CONFIG_FILE}")
+					fi
+					if [[ -n "${SNPEFF_DATA_DIR:-}" ]]; then
+						snpeff_cmd+=("-dataDir" "${SNPEFF_DATA_DIR}")
+					fi
+					snpeff_cmd+=("${SNPEFF_DB}" "${merged_vcf}")
+					if "${snpeff_env[@]}" "${snpeff_cmd[@]}" > "${snpeff_vcf}" 2>> "${varscan_log}"; then
+						snpeff_status="ok"
+					else
+						echo "[WARN] snpEff failed for ${sampleBase}; see ${varscan_log}" | tee -a "${varscan_log}"
 					rm -f "${snpeff_vcf}" || true
 					snpeff_status="failed"
 				fi
