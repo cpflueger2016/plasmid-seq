@@ -49,14 +49,22 @@ find . -mindepth 1 -maxdepth 1 -type d ! \( -name "Fasta_Reference_Files" -o -na
   -exec mv -t "$RESULTS" {} +
 
 # Optionally build run summary (CSV + HTML) before copying to Aligned.
-SUMMARY_SCRIPT="${script_dir}/plasmidseq_run_summary.py"
+SUMMARY_SCRIPT=""
+if [[ -n "${PIPELINE_SCRIPTS_DIR:-}" && -f "${PIPELINE_SCRIPTS_DIR}/plasmidseq_run_summary.py" ]]; then
+  SUMMARY_SCRIPT="${PIPELINE_SCRIPTS_DIR}/plasmidseq_run_summary.py"
+elif [[ -f "${script_dir}/plasmidseq_run_summary.py" ]]; then
+  SUMMARY_SCRIPT="${script_dir}/plasmidseq_run_summary.py"
+elif [[ -f "$(cd "$(dirname "$cfg")" && pwd -P)/plasmidseq_run_summary.py" ]]; then
+  SUMMARY_SCRIPT="$(cd "$(dirname "$cfg")" && pwd -P)/plasmidseq_run_summary.py"
+fi
 if [[ -n "$PLATE_MAP_CSV" ]]; then
   if [[ ! -f "$PLATE_MAP_CSV" ]]; then
     echo "[gather][WARN] plate map CSV not found; skipping run summary: $PLATE_MAP_CSV"
-  elif [[ ! -f "$SUMMARY_SCRIPT" ]]; then
+  elif [[ -z "$SUMMARY_SCRIPT" || ! -f "$SUMMARY_SCRIPT" ]]; then
     echo "[gather][WARN] summary script not found; skipping run summary: $SUMMARY_SCRIPT"
   else
     echo "[gather] building run summary with plate map: $PLATE_MAP_CSV"
+    echo "[gather] summary script: $SUMMARY_SCRIPT"
     if command -v python3 >/dev/null 2>&1; then
       PYTHON_BIN="python3"
     elif command -v python >/dev/null 2>&1; then
