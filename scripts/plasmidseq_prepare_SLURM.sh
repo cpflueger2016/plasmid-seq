@@ -218,18 +218,30 @@ fi
 
 # Create jobs file
 : > jobs.tsv
+shopt -s nullglob
 for i in */PL*/; do
+  # Exclude helper folders created during snpEff DB build.
+  [[ "$i" == snpEff_build/* ]] && continue
+
+  one_matches=( ${i}*_R1_*gz )
+  two_matches=( ${i}*_R2_*gz )
+  if [[ ${#one_matches[@]} -eq 0 || ${#two_matches[@]} -eq 0 ]]; then
+    echo "[prep][WARN] skipping folder without paired FASTQs: ${i%/}"
+    continue
+  fi
+
   ref=$(find "$(pwd)/${i}" -maxdepth 1 -type f \( -name "*_clean.fa" -o -name "*_clean.fasta" \) | head -n 1)
   if [[ -z "$ref" ]]; then
     ref=$(find "$(pwd)/${i}" -maxdepth 1 -type f \( -name "*.fa" -o -name "*.fasta" -o -name "na" \) | head -n 1)
   fi
   ref=${ref##*/}
 
-  one=$(ls ${i}*_R1_*gz); one=${one##*/}
-  two=$(ls ${i}*_R2_*gz); two=${two##*/}
+  one=${one_matches[0]##*/}
+  two=${two_matches[0]##*/}
 
   uID=$(echo "${i}" | perl -ne '/(PL\d{4,})/ && print $1."\n"')
   printf "%s\t%s\t%s\t%s\t%s\n" "${i%/}" "$ref" "$one" "$two" "$uID" >> jobs.tsv
 done
+shopt -u nullglob
 
 echo "[prep] jobs: $(wc -l < jobs.tsv | tr -d ' ')"
