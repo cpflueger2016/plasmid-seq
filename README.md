@@ -292,7 +292,7 @@ There are multiple logging layers:
 
 Generate a per-run summary table + report page with:
 - total reads per sample (from `*_fastp_report.json`)
-- mapping rate (from `*_bowtie2.log`, when present)
+- mapping rate (from `*_bbmap.log`, with Bowtie2 logs still supported for legacy runs)
 - reference/plannotate status flags
 - bar graph of reads per sample
 - 96-well plate issue view (using `PL_to_plate_position.csv`)

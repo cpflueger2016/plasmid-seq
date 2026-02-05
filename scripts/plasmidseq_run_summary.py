@@ -16,7 +16,8 @@ from typing import Dict, List, Optional, Tuple
 
 
 PL_RE = re.compile(r"(PL\d{4,})")
-OVERALL_ALIGN_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)% overall alignment rate")
+BOWTIE2_OVERALL_ALIGN_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)% overall alignment rate")
+BBMAP_MAPPED_PCT_RE = re.compile(r"(?im)^\s*mapped:\s*.*?([0-9]+(?:\.[0-9]+)?)%")
 
 
 def parse_args() -> argparse.Namespace:
@@ -140,18 +141,28 @@ def parse_fastp_json(sample_dir: Path) -> Dict[str, Optional[float]]:
     return result
 
 
-def parse_bowtie_log(sample_dir: Path) -> Dict[str, Optional[float]]:
+def parse_mapping_log(sample_dir: Path) -> Dict[str, Optional[float]]:
     result = {
-        "bowtie2_overall_alignment_pct": None,
+        "mapping_tool": None,
+        "overall_alignment_pct": None,
     }
-    files = sorted(sample_dir.glob("*_bowtie2.log"))
-    if not files:
-        return result
+    bbmap_files = sorted(sample_dir.glob("*_bbmap.log"))
+    if bbmap_files:
+        text = bbmap_files[0].read_text(encoding="utf-8", errors="ignore")
+        match = BBMAP_MAPPED_PCT_RE.search(text)
+        if match:
+            result["mapping_tool"] = "bbmap"
+            result["overall_alignment_pct"] = float(match.group(1))
+            return result
 
-    text = files[0].read_text(encoding="utf-8", errors="ignore")
-    match = OVERALL_ALIGN_RE.search(text)
-    if match:
-        result["bowtie2_overall_alignment_pct"] = float(match.group(1))
+    # Backward compatibility for prior runs.
+    bowtie_files = sorted(sample_dir.glob("*_bowtie2.log"))
+    if bowtie_files:
+        text = bowtie_files[0].read_text(encoding="utf-8", errors="ignore")
+        match = BOWTIE2_OVERALL_ALIGN_RE.search(text)
+        if match:
+            result["mapping_tool"] = "bowtie2"
+            result["overall_alignment_pct"] = float(match.group(1))
     return result
 
 
@@ -208,7 +219,7 @@ def build_rows(
         plid = job["plid"].strip() or (pl_match.group(1) if pl_match else "")
 
         fastp = parse_fastp_json(sample_dir) if sample_dir.exists() else {}
-        bowtie = parse_bowtie_log(sample_dir) if sample_dir.exists() else {}
+        mapping = parse_mapping_log(sample_dir) if sample_dir.exists() else {}
         ref_status = detect_reference_status(sample_dir, job["ref"]) if sample_dir.exists() else "missing"
         unicycler_status = detect_unicycler_status(sample_dir) if sample_dir.exists() else "missing"
         plannotate_status = detect_plannotate_status(sample_dir) if sample_dir.exists() else "missing"
@@ -229,10 +240,10 @@ def build_rows(
             severity = "fail"
             issues.append("fastp_report_missing")
 
-        mapped = bowtie.get("bowtie2_overall_alignment_pct")
+        mapped = mapping.get("overall_alignment_pct")
         if ref_status in {"found", "ambiguous"} and mapped is None:
             severity = "fail"
-            issues.append("bowtie2_log_missing")
+            issues.append("mapping_log_missing")
 
         if ref_status == "missing":
             if severity != "fail":
@@ -271,7 +282,8 @@ def build_rows(
             "reads_after_filtering": int(reads_after) if reads_after is not None else "",
             "q30_before_pct": round((q30_before or 0) * 100, 2) if q30_before is not None else "",
             "q30_after_pct": round((q30_after or 0) * 100, 2) if q30_after is not None else "",
-            "bowtie2_overall_alignment_pct": round(mapped, 2) if mapped is not None else "",
+            "mapping_tool": mapping.get("mapping_tool") or "",
+            "overall_alignment_pct": round(mapped, 2) if mapped is not None else "",
             "unicycler_status": unicycler_status,
             "plannotate_status": plannotate_status,
             "issue_flag": severity,
@@ -297,7 +309,8 @@ def write_csv(path: Path, rows: List[Dict[str, object]]) -> None:
         "reads_after_filtering",
         "q30_before_pct",
         "q30_after_pct",
-        "bowtie2_overall_alignment_pct",
+        "mapping_tool",
+        "overall_alignment_pct",
         "unicycler_status",
         "plannotate_status",
         "issue_flag",
@@ -380,7 +393,7 @@ def make_plate_grids(rows: List[Dict[str, object]], plate_map: Dict[str, Tuple[s
                     state = str(sample["issue_flag"])
                     cls = {"ok": "cell-ok", "warn": "cell-warn", "fail": "cell-fail"}.get(state, "cell-na")
                     reason = str(sample["issue_reason"])
-                    mapping = sample["bowtie2_overall_alignment_pct"]
+                    mapping = sample["overall_alignment_pct"]
                     reads = sample["raw_reads_total"]
                     title = f"{plid} | reads={reads} | map%={mapping} | {reason}"
                     text = plid
@@ -416,7 +429,8 @@ def render_html(
             f"<td>{html.escape(str(r['well']))}</td>"
             f"<td>{fmt_number(r['raw_reads_total'])}</td>"
             f"<td>{fmt_number(r['reads_after_filtering'])}</td>"
-            f"<td>{html.escape(str(r['bowtie2_overall_alignment_pct']))}</td>"
+            f"<td>{html.escape(str(r['mapping_tool']))}</td>"
+            f"<td>{html.escape(str(r['overall_alignment_pct']))}</td>"
             f"<td>{html.escape(str(r['reference_status']))}</td>"
             f"<td>{html.escape(str(r['plannotate_status']))}</td>"
             f"<td class='flag-{html.escape(str(r['issue_flag']))}'>{html.escape(str(r['issue_flag']))}</td>"
@@ -495,7 +509,7 @@ def render_html(
       <thead>
         <tr>
           <th>PL</th><th>Sample Folder</th><th>Plate</th><th>Well</th>
-          <th>Raw Reads</th><th>Reads After Filter</th><th>Map %</th>
+          <th>Raw Reads</th><th>Reads After Filter</th><th>Mapper</th><th>Map %</th>
           <th>Ref Status</th><th>pLannotate</th><th>Issue</th><th>Reason</th>
         </tr>
       </thead>

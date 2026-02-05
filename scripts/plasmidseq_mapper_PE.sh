@@ -1,7 +1,7 @@
 #!/bin/bash
 
-### Maps a plasmid against bowtie2 reference as well as de novo assembles fastq file
-### requires: fastp, bowtie2, sambamba, SPAdes, samtools, seqkit, pigz, bcftools, tabix, unicycler, pilon, java
+### Maps a plasmid against a BBMap reference (circular-aware) as well as de novo assembles fastq file
+### requires: fastp, bbmap, sambamba, SPAdes, samtools, seqkit, pigz, bcftools, tabix, unicycler, pilon, java
 ### version 0.8.2
 
 version="0.8.2"
@@ -21,8 +21,8 @@ if ! [ -x "$(command -v fastp)" ]; then
   exit 1
 fi
 
-if ! [ -x "$(command -v bowtie2-align-s)" ]; then
-  echo 'Error: bowtie2-align-s is not installed. Try installing with "conda install -c bioconda bowtie2' >&2
+if ! [ -x "$(command -v bbmap.sh)" ]; then
+  echo 'Error: bbmap.sh is not installed. Try installing with "conda install -c bioconda bbmap' >&2
   exit 1
 fi
 
@@ -71,7 +71,7 @@ OPTIONS:
     -h    Show this message
     -1    <file_r1.fastq> Fastq file, paired end read 1, gzipped is ok.
     -2    <file_r2.fastq> Fastq file, paired end read 2, gzipped is ok.
-    -r    <ref.fa> Fasta reference file for mapping with bowtie2. Optional. Must end in *.fa !
+    -r    <ref.fa> Fasta reference file for mapping with BBMap. Optional. Must end in *.fa !
     -s    skip SPADES plasmid de-novo assembly
     -q    quality score for trimming, default = 20
     -c    clean up SPADES assembly directory and only save simplified_contigs that contain sequences, default = FALSE	
@@ -196,7 +196,6 @@ else
 fi
 
 fastaRefFile=${fastaRef}
-bowtieIndex=${fastaRefFile%.fa*}
 
 
 # 1. Trim Reads (Nextera Adapters)
@@ -218,19 +217,18 @@ fastp -w 4 -q ${qval} \
 ### Reference mapping if fasta reference file was provided
 
 if [ "${skipping}" == "FALSE" ]; then
-	# 2. Build Bowtie2 Index
+	# 2. BBMap reference mapping (circular-aware via usemodulo)
 
-	bowtie2-build -f ${fastaRef} ${bowtieIndex} &> "${fastQ_f%_S[0-9]*}_bt2_index.log"
-
-	# 3. Bowtie2 map against index
-
-	bowtie2-align-s -x ${bowtieIndex} \
-					--very-sensitive  \
-					-1 "${fastQ_f%_S[0-9]*}_R1_trimmed.fastq" \
-					-2 "${fastQ_r%_S[0-9]*}_R2_trimmed.fastq" \
-					-S "${fastQ_f%_S[0-9]*}.sam" &> "${fastQ_f%_S[0-9]*}_bowtie2.log"
+	bbmap.sh ref=${fastaRef} \
+				in="${fastQ_f%_S[0-9]*}_R1_trimmed.fastq" \
+				in2="${fastQ_r%_S[0-9]*}_R2_trimmed.fastq" \
+				out="${fastQ_f%_S[0-9]*}.sam" \
+				usemodulo=t \
+				nodisk=t \
+				threads=4 \
+				overwrite=t &> "${fastQ_f%_S[0-9]*}_bbmap.log"
 	echo
-	cat "${fastQ_f%_S[0-9]*}_bowtie2.log"
+	cat "${fastQ_f%_S[0-9]*}_bbmap.log"
 				
 	# 4. Sam to Bam conversion, filtering and removal of multimapper
 
@@ -440,7 +438,5 @@ fi
 
 pigz -p 12 "${fastQ_f%_S[0-9]*}_R1_trimmed.fastq" "${fastQ_r%_S[0-9]*}_R2_trimmed.fastq"
 find . -name "*.sam" -delete
-find . -name "*.bt2" -delete
 find . -name "0" -delete
 #rm $fastQ_f $fastQ_r
-
