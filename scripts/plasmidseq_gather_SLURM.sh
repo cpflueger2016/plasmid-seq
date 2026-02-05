@@ -50,12 +50,20 @@ find . -mindepth 1 -maxdepth 1 -type d ! \( -name "Fasta_Reference_Files" -o -na
 
 # Optionally build run summary (CSV + HTML) before copying to Aligned.
 SUMMARY_SCRIPT=""
+SAMPLE_REPORT_SCRIPT=""
 if [[ -n "${PIPELINE_SCRIPTS_DIR:-}" && -f "${PIPELINE_SCRIPTS_DIR}/plasmidseq_run_summary.py" ]]; then
   SUMMARY_SCRIPT="${PIPELINE_SCRIPTS_DIR}/plasmidseq_run_summary.py"
 elif [[ -f "${script_dir}/plasmidseq_run_summary.py" ]]; then
   SUMMARY_SCRIPT="${script_dir}/plasmidseq_run_summary.py"
 elif [[ -f "$(cd "$(dirname "$cfg")" && pwd -P)/plasmidseq_run_summary.py" ]]; then
   SUMMARY_SCRIPT="$(cd "$(dirname "$cfg")" && pwd -P)/plasmidseq_run_summary.py"
+fi
+if [[ -n "${PIPELINE_SCRIPTS_DIR:-}" && -f "${PIPELINE_SCRIPTS_DIR}/plasmidseq_sample_report.py" ]]; then
+  SAMPLE_REPORT_SCRIPT="${PIPELINE_SCRIPTS_DIR}/plasmidseq_sample_report.py"
+elif [[ -f "${script_dir}/plasmidseq_sample_report.py" ]]; then
+  SAMPLE_REPORT_SCRIPT="${script_dir}/plasmidseq_sample_report.py"
+elif [[ -f "$(cd "$(dirname "$cfg")" && pwd -P)/plasmidseq_sample_report.py" ]]; then
+  SAMPLE_REPORT_SCRIPT="$(cd "$(dirname "$cfg")" && pwd -P)/plasmidseq_sample_report.py"
 fi
 if [[ -n "$PLATE_MAP_CSV" ]]; then
   if [[ ! -f "$PLATE_MAP_CSV" ]]; then
@@ -84,6 +92,37 @@ if [[ -n "$PLATE_MAP_CSV" ]]; then
   fi
 else
   echo "[gather] no plate map CSV provided; skipping run summary."
+fi
+
+# Build per-sample report (JSON + HTML) with coverage comparison.
+if [[ -z "$SAMPLE_REPORT_SCRIPT" || ! -f "$SAMPLE_REPORT_SCRIPT" ]]; then
+  echo "[gather][WARN] sample report script not found; skipping per-sample reports: $SAMPLE_REPORT_SCRIPT"
+elif ! command -v python3 >/dev/null 2>&1 && ! command -v python >/dev/null 2>&1; then
+  echo "[gather][WARN] no python interpreter found; skipping per-sample reports."
+else
+  echo "[gather] building per-sample reports with: $SAMPLE_REPORT_SCRIPT"
+  [[ -x "$SAMPLE_REPORT_SCRIPT" ]] || chmod +x "$SAMPLE_REPORT_SCRIPT" || true
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN_SAMPLE="python3"
+  else
+    PYTHON_BIN_SAMPLE="python"
+  fi
+
+  report_count=0
+  while IFS= read -r fastp_json; do
+    sample_dir="$(dirname "$fastp_json")"
+    sample_name="$(basename "$sample_dir")"
+    report_prefix="${sample_dir}/${sample_name}_sample_report"
+    echo "[gather] sample report: $sample_dir"
+    if ! "$PYTHON_BIN_SAMPLE" "$SAMPLE_REPORT_SCRIPT" -s "$sample_dir" -o "$report_prefix" \
+      >> "$SCRATCH/Logs/sample_reports.log" 2>&1; then
+      echo "[gather][WARN] sample report failed for $sample_dir (continuing)"
+      tail -n 20 "$SCRATCH/Logs/sample_reports.log" || true
+    else
+      report_count=$((report_count + 1))
+    fi
+  done < <(find "$RESULTS" -type f -name "*_fastp_report.json" | sort)
+  echo "[gather] per-sample reports generated: $report_count"
 fi
 
 # Preserve all gather/map logs in RESULTS for easier debugging
