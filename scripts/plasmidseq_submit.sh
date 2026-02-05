@@ -153,6 +153,14 @@ echo "[submit] prep job: $prep_jobid"
 SCRATCH="${MYSCRATCH}/${jobname}/${prep_jobid}"
 RESULTS="${RESULTS_BASE}/${jobname}/${prep_jobid}"
 
+# If snpEff is enabled, pass run-specific DB config/data paths to mapping jobs.
+if [[ "${ENABLE_SNPEFF:-0}" == "1" ]]; then
+  SNPEFF_DB="${SNPEFF_DB:-plasmidseq_${prep_jobid}}"
+  SNPEFF_DATA_DIR="${SNPEFF_DATA_DIR:-${SCRATCH}/snpEff_data}"
+  SNPEFF_CONFIG_FILE="${SNPEFF_CONFIG_FILE:-${SCRATCH}/snpEff.config}"
+  export SNPEFF_DB SNPEFF_DATA_DIR SNPEFF_CONFIG_FILE
+fi
+
 # best effort: keep a copy of the submit log alongside the run in scratch
 # (gather can then copy it into RESULTS automatically)
 mkdir -p "${SCRATCH}" 2>/dev/null || true
@@ -161,6 +169,9 @@ cp -f "$log_file" "${SCRATCH}/plasmidseq_submit.log" 2>/dev/null || true
 
 echo "[submit] expected SCRATCH=$SCRATCH"
 echo "[submit] expected RESULTS=$RESULTS"
+if [[ "${ENABLE_SNPEFF:-0}" == "1" ]]; then
+  echo "[submit] snpEff enabled: db=${SNPEFF_DB} config=${SNPEFF_CONFIG_FILE} dataDir=${SNPEFF_DATA_DIR}"
+fi
 
 # 2) Wait for jobs.tsv to appear (prep must finish staging and writing it)
 jobs_file="${SCRATCH}/jobs.tsv"

@@ -221,14 +221,17 @@ fastp -w 4 -q ${qval} \
 
 if [ "${skipping}" == "FALSE" ]; then
 	# 2. Clean FASTA headers for robust mapping compatibility
-	if [[ ! -x "${fastaCleaner}" ]]; then
-		echo "Error: FASTA header cleaner script not found/executable: ${fastaCleaner}" >&2
-		exit 1
-	fi
-
-	cleanFastaRef="${fastaRefFile%.*}_clean.fa"
+	if [[ "${fastaRefFile}" == *_clean.fa || "${fastaRefFile}" == *_clean.fasta ]]; then
+		cleanFastaRef="${fastaRefFile}"
+	else
+		if [[ ! -x "${fastaCleaner}" ]]; then
+			echo "Error: FASTA header cleaner script not found/executable: ${fastaCleaner}" >&2
+			exit 1
+		fi
+		cleanFastaRef="${fastaRefFile%.*}_clean.fa"
 		"${fastaCleaner}" -i "${fastaRefFile}" -o "${cleanFastaRef}" \
 			> "${sampleBase}_fasta_header_cleanup.log" 2>&1
+	fi
 	fastaRef="${cleanFastaRef}"
 
 	# 3. BBMap reference mapping (circular-aware via usemodulo)
@@ -490,7 +493,15 @@ if [[ "${ENABLE_VARIANTS:-0}" == "1" ]]; then
 				snpeff_status="missing_db"
 			elif command -v "${SNPEFF_BIN:-snpEff}" >/dev/null 2>&1; then
 				echo "[variants] running snpEff (${SNPEFF_BIN:-snpEff} ${SNPEFF_DB}) on ${merged_vcf}" | tee -a "${varscan_log}"
-				if "${SNPEFF_BIN:-snpEff}" "${SNPEFF_DB}" "${merged_vcf}" > "${snpeff_vcf}" 2>> "${varscan_log}"; then
+				snpeff_cmd=("${SNPEFF_BIN:-snpEff}")
+				if [[ -n "${SNPEFF_CONFIG_FILE:-}" ]]; then
+					snpeff_cmd+=("-c" "${SNPEFF_CONFIG_FILE}")
+				fi
+				if [[ -n "${SNPEFF_DATA_DIR:-}" ]]; then
+					snpeff_cmd+=("-dataDir" "${SNPEFF_DATA_DIR}")
+				fi
+				snpeff_cmd+=("${SNPEFF_DB}" "${merged_vcf}")
+				if "${snpeff_cmd[@]}" > "${snpeff_vcf}" 2>> "${varscan_log}"; then
 					snpeff_status="ok"
 				else
 					echo "[WARN] snpEff failed for ${sampleBase}; see ${varscan_log}" | tee -a "${varscan_log}"
