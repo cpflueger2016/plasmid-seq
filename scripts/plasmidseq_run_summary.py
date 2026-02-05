@@ -188,6 +188,66 @@ def detect_plannotate_status(sample_dir: Path) -> str:
     return "missing"
 
 
+def count_vcf_records(path: Path) -> int:
+    if not path.exists():
+        return 0
+    n = 0
+    with path.open(encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if line.startswith("#"):
+                continue
+            if line.strip():
+                n += 1
+    return n
+
+
+def parse_snpeff_impacts(path: Path) -> Dict[str, int]:
+    impacts = {"HIGH": 0, "MODERATE": 0, "LOW": 0, "MODIFIER": 0}
+    if not path.exists():
+        return impacts
+    with path.open(encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if line.startswith("#"):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 8:
+                continue
+            info = parts[7]
+            ann_items = []
+            for token in info.split(";"):
+                if token.startswith("ANN="):
+                    ann_items = token[4:].split(",")
+                    break
+            for ann in ann_items:
+                cols = ann.split("|")
+                if len(cols) > 2 and cols[2] in impacts:
+                    impacts[cols[2]] += 1
+    return impacts
+
+
+def parse_variant_outputs(sample_dir: Path, sample_name: str) -> Dict[str, object]:
+    snps_vcf = sample_dir / f"{sample_name}_varscan_snps.vcf"
+    indels_vcf = sample_dir / f"{sample_name}_varscan_indels.vcf"
+    merged_vcf = sample_dir / f"{sample_name}_varscan_merged.vcf"
+    snpeff_vcf = sample_dir / f"{sample_name}_varscan_snpeff.vcf"
+
+    snp_count = count_vcf_records(snps_vcf)
+    indel_count = count_vcf_records(indels_vcf)
+    merged_count = count_vcf_records(merged_vcf)
+    snpeff_count = count_vcf_records(snpeff_vcf)
+    impacts = parse_snpeff_impacts(snpeff_vcf)
+
+    return {
+        "snp_count": snp_count,
+        "indel_count": indel_count,
+        "total_variants": merged_count if merged_count else (snp_count + indel_count),
+        "snpeff_status": "present" if snpeff_vcf.exists() else "missing",
+        "snpeff_annotated_variant_count": snpeff_count,
+        "snpeff_high_count": impacts["HIGH"],
+        "snpeff_moderate_count": impacts["MODERATE"],
+    }
+
+
 def discover_extra_sample_dirs(run_dir: Path, known_folders: set[str]) -> List[Dict[str, str]]:
     extras: List[Dict[str, str]] = []
     for fastp_json in run_dir.glob("**/*_fastp_report.json"):
@@ -223,6 +283,7 @@ def build_rows(
         ref_status = detect_reference_status(sample_dir, job["ref"]) if sample_dir.exists() else "missing"
         unicycler_status = detect_unicycler_status(sample_dir) if sample_dir.exists() else "missing"
         plannotate_status = detect_plannotate_status(sample_dir) if sample_dir.exists() else "missing"
+        variants = parse_variant_outputs(sample_dir, sample_name) if sample_dir.exists() else {}
 
         plate = ""
         well = ""
@@ -284,6 +345,13 @@ def build_rows(
             "q30_after_pct": round((q30_after or 0) * 100, 2) if q30_after is not None else "",
             "mapping_tool": mapping.get("mapping_tool") or "",
             "overall_alignment_pct": round(mapped, 2) if mapped is not None else "",
+            "variant_snp_count": int(variants.get("snp_count", 0)),
+            "variant_indel_count": int(variants.get("indel_count", 0)),
+            "variant_total_count": int(variants.get("total_variants", 0)),
+            "snpeff_status": variants.get("snpeff_status", "missing"),
+            "snpeff_annotated_variant_count": int(variants.get("snpeff_annotated_variant_count", 0)),
+            "snpeff_high_count": int(variants.get("snpeff_high_count", 0)),
+            "snpeff_moderate_count": int(variants.get("snpeff_moderate_count", 0)),
             "unicycler_status": unicycler_status,
             "plannotate_status": plannotate_status,
             "issue_flag": severity,
@@ -311,6 +379,13 @@ def write_csv(path: Path, rows: List[Dict[str, object]]) -> None:
         "q30_after_pct",
         "mapping_tool",
         "overall_alignment_pct",
+        "variant_snp_count",
+        "variant_indel_count",
+        "variant_total_count",
+        "snpeff_status",
+        "snpeff_annotated_variant_count",
+        "snpeff_high_count",
+        "snpeff_moderate_count",
         "unicycler_status",
         "plannotate_status",
         "issue_flag",
@@ -431,6 +506,12 @@ def render_html(
             f"<td>{fmt_number(r['reads_after_filtering'])}</td>"
             f"<td>{html.escape(str(r['mapping_tool']))}</td>"
             f"<td>{html.escape(str(r['overall_alignment_pct']))}</td>"
+            f"<td>{html.escape(str(r['variant_total_count']))}</td>"
+            f"<td>{html.escape(str(r['variant_snp_count']))}</td>"
+            f"<td>{html.escape(str(r['variant_indel_count']))}</td>"
+            f"<td>{html.escape(str(r['snpeff_status']))}</td>"
+            f"<td>{html.escape(str(r['snpeff_high_count']))}</td>"
+            f"<td>{html.escape(str(r['snpeff_moderate_count']))}</td>"
             f"<td>{html.escape(str(r['reference_status']))}</td>"
             f"<td>{html.escape(str(r['plannotate_status']))}</td>"
             f"<td class='flag-{html.escape(str(r['issue_flag']))}'>{html.escape(str(r['issue_flag']))}</td>"
@@ -510,6 +591,7 @@ def render_html(
         <tr>
           <th>PL</th><th>Sample Folder</th><th>Plate</th><th>Well</th>
           <th>Raw Reads</th><th>Reads After Filter</th><th>Mapper</th><th>Map %</th>
+          <th>Var Tot</th><th>SNP</th><th>Indel</th><th>snpEff</th><th>HIGH</th><th>MOD</th>
           <th>Ref Status</th><th>pLannotate</th><th>Issue</th><th>Reason</th>
         </tr>
       </thead>

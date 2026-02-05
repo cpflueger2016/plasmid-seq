@@ -430,6 +430,8 @@ if [[ "${ENABLE_VARIANTS:-0}" == "1" ]]; then
 		snps_vcf="${sampleBase}_varscan_snps.vcf"
 		indels_vcf="${sampleBase}_varscan_indels.vcf"
 		merged_vcf="${sampleBase}_varscan_merged.vcf"
+		snpeff_vcf="${sampleBase}_varscan_snpeff.vcf"
+		variant_summary="${sampleBase}_varscan_summary.tsv"
 
 		min_cov="${VARSCAN_MIN_COVERAGE:-10}"
 		min_var_freq="${VARSCAN_MIN_VAR_FREQ:-0.01}"
@@ -466,13 +468,58 @@ if [[ "${ENABLE_VARIANTS:-0}" == "1" ]]; then
 			echo "[WARN] ENABLE_VARIANTS=1 but VarScan not found (set VARSCAN_BIN or VARSCAN_JAR)." | tee -a "${varscan_log}"
 		fi
 
-		if [[ -s "${snps_vcf}" ]]; then
-			cp -f "${snps_vcf}" "${merged_vcf}"
-			if [[ -s "${indels_vcf}" ]]; then
-				grep -v '^#' "${indels_vcf}" >> "${merged_vcf}" || true
+		if [[ -s "${snps_vcf}" || -s "${indels_vcf}" ]]; then
+			if [[ -s "${snps_vcf}" ]]; then
+				cp -f "${snps_vcf}" "${merged_vcf}"
+				if [[ -s "${indels_vcf}" ]]; then
+					grep -v '^#' "${indels_vcf}" >> "${merged_vcf}" || true
+				fi
+			else
+				cp -f "${indels_vcf}" "${merged_vcf}"
 			fi
 			echo "[variants] wrote ${snps_vcf}, ${indels_vcf}, ${merged_vcf}" | tee -a "${varscan_log}"
 		fi
+
+		snpeff_status="skipped"
+		if [[ "${ENABLE_SNPEFF:-0}" == "1" ]]; then
+			if [[ ! -s "${merged_vcf}" ]]; then
+				echo "[WARN] ENABLE_SNPEFF=1 but merged VCF missing; skipping snpEff." | tee -a "${varscan_log}"
+				snpeff_status="missing_input"
+			elif [[ -z "${SNPEFF_DB:-}" ]]; then
+				echo "[WARN] ENABLE_SNPEFF=1 but SNPEFF_DB is empty; skipping snpEff." | tee -a "${varscan_log}"
+				snpeff_status="missing_db"
+			elif command -v "${SNPEFF_BIN:-snpEff}" >/dev/null 2>&1; then
+				echo "[variants] running snpEff (${SNPEFF_BIN:-snpEff} ${SNPEFF_DB}) on ${merged_vcf}" | tee -a "${varscan_log}"
+				if "${SNPEFF_BIN:-snpEff}" "${SNPEFF_DB}" "${merged_vcf}" > "${snpeff_vcf}" 2>> "${varscan_log}"; then
+					snpeff_status="ok"
+				else
+					echo "[WARN] snpEff failed for ${sampleBase}; see ${varscan_log}" | tee -a "${varscan_log}"
+					rm -f "${snpeff_vcf}" || true
+					snpeff_status="failed"
+				fi
+			else
+				echo "[WARN] ENABLE_SNPEFF=1 but snpEff binary not found: ${SNPEFF_BIN:-snpEff}" | tee -a "${varscan_log}"
+				snpeff_status="binary_missing"
+			fi
+		fi
+
+		snp_count=0
+		indel_count=0
+		merged_count=0
+		if [[ -s "${snps_vcf}" ]]; then
+			snp_count=$(grep -vc '^#' "${snps_vcf}" || true)
+		fi
+		if [[ -s "${indels_vcf}" ]]; then
+			indel_count=$(grep -vc '^#' "${indels_vcf}" || true)
+		fi
+		if [[ -s "${merged_vcf}" ]]; then
+			merged_count=$(grep -vc '^#' "${merged_vcf}" || true)
+		fi
+		{
+			echo -e "sample\tvarscan_snps\tvarscan_indels\tvarscan_total\tsnpeff_status\tsnpeff_vcf"
+			echo -e "${sampleBase}\t${snp_count}\t${indel_count}\t${merged_count}\t${snpeff_status}\t${snpeff_vcf}"
+		} > "${variant_summary}"
+		echo "[variants] wrote ${variant_summary}" | tee -a "${varscan_log}"
 	fi
 fi
 

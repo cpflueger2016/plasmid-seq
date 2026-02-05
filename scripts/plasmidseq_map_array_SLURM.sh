@@ -51,6 +51,7 @@ fi
 # Mapper runs in a child bash process, so export config vars it consumes.
 export CONDA_ENV CONDA_ENV_PLANNOTATE CONDA_INIT MODULES
 export ENABLE_VARIANTS VARSCAN_BIN VARSCAN_JAR VARSCAN_MIN_COVERAGE VARSCAN_MIN_VAR_FREQ VARSCAN_PVALUE
+export ENABLE_SNPEFF SNPEFF_BIN SNPEFF_DB
 
 # --- Environment ---
 if command -v module >/dev/null 2>&1 && [[ -n "${MODULES:-}" ]]; then
