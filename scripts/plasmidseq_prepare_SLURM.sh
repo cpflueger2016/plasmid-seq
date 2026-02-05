@@ -210,7 +210,7 @@ EOF
     echo "[prep] using snpEff JAVA_HOME=${SNPEFF_JAVA_HOME}"
     snpeff_env=(env "JAVA_HOME=${SNPEFF_JAVA_HOME}" "PATH=${SNPEFF_JAVA_HOME}/bin:${PATH}")
   fi
-  if ! "${snpeff_env[@]}" "${SNPEFF_BIN:-snpEff}" build -genbank -v -c "$cfg_file" -dataDir "$data_dir" "$db_name" \
+  if ! "${snpeff_env[@]}" "${SNPEFF_BIN:-snpEff}" build -genbank -v -noCheckProtein -c "$cfg_file" -dataDir "$data_dir" "$db_name" \
     > "$snpeff_log" 2>&1; then
     echo "[prep][ERROR] snpEff DB build command failed for ${db_name}. See $snpeff_log" >&2
     return 1
