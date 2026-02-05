@@ -1,0 +1,411 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://plasmid-seq/schemas/sample_report.schema.json",
+  "title": "PlasmidSeq Sample Report",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "sample_id",
+    "reference",
+    "status",
+    "reads",
+    "mapping",
+    "duplicates",
+    "coverage",
+    "assembly",
+    "flags",
+    "artifacts",
+    "generated_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.0\\.0$"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "sample_id": {
+      "type": "string"
+    },
+    "plasmid_id": {
+      "type": "string"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reference": {
+      "type": "object",
+      "required": [
+        "name",
+        "length_bp"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "length_bp": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cleaned_header_fasta": {
+          "type": "string"
+        },
+        "source_fasta": {
+          "type": "string"
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "required": [
+        "traffic_light",
+        "score"
+      ],
+      "properties": {
+        "traffic_light": {
+          "type": "string",
+          "enum": [
+            "green",
+            "yellow",
+            "red"
+          ]
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "summary": {
+          "type": "string"
+        }
+      }
+    },
+    "reads": {
+      "type": "object",
+      "required": [
+        "raw_reads_total",
+        "reads_after_filtering",
+        "q30_before_pct",
+        "q30_after_pct"
+      ],
+      "properties": {
+        "raw_reads_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "read_pairs_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reads_after_filtering": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "q30_before_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "q30_after_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "required": [
+        "tool",
+        "mapped_pct",
+        "unambiguous_pct",
+        "ambiguous_pct"
+      ],
+      "properties": {
+        "tool": {
+          "type": "string",
+          "enum": [
+            "bbmap"
+          ]
+        },
+        "mapped_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "unambiguous_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "ambiguous_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "unmapped_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "error_rate_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "duplicates": {
+      "type": "object",
+      "required": [
+        "duplicate_reads",
+        "duplicate_pct",
+        "deduplicated_bam"
+      ],
+      "properties": {
+        "duplicate_reads": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duplicate_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "deduplicated_bam": {
+          "type": "string"
+        },
+        "markdup_log": {
+          "type": "string"
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": [
+        "reference_read_depth",
+        "assembly_to_reference_depth",
+        "breadth"
+      ],
+      "properties": {
+        "reference_read_depth": {
+          "type": "object",
+          "required": [
+            "mean_depth",
+            "median_depth",
+            "max_depth"
+          ],
+          "properties": {
+            "mean_depth": {
+              "type": "number",
+              "minimum": 0
+            },
+            "median_depth": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max_depth": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "assembly_to_reference_depth": {
+          "type": "object",
+          "required": [
+            "mean_depth",
+            "median_depth",
+            "max_depth"
+          ],
+          "properties": {
+            "mean_depth": {
+              "type": "number",
+              "minimum": 0
+            },
+            "median_depth": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max_depth": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "breadth": {
+          "type": "object",
+          "required": [
+            "at_1x_pct",
+            "at_10x_pct",
+            "at_30x_pct"
+          ],
+          "properties": {
+            "at_1x_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "at_10x_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "at_30x_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        },
+        "zero_coverage_regions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "start",
+              "end",
+              "length_bp"
+            ],
+            "properties": {
+              "start": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "length_bp": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "low_coverage_regions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "start",
+              "end",
+              "length_bp",
+              "threshold"
+            ],
+            "properties": {
+              "start": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "length_bp": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "threshold": {
+                "type": "number",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "assembly": {
+      "type": "object",
+      "required": [
+        "unicycler_status"
+      ],
+      "properties": {
+        "unicycler_status": {
+          "type": "string",
+          "enum": [
+            "present",
+            "missing",
+            "failed"
+          ]
+        },
+        "contig_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_length_bp": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "longest_contig_bp": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "n50_bp": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "assembly_fasta": {
+          "type": "string"
+        },
+        "assembly_map_bam": {
+          "type": "string"
+        }
+      }
+    },
+    "flags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "low_mappability",
+          "missing_reference_segments",
+          "assembly_reference_discordance",
+          "high_duplicate_fraction",
+          "high_unmapped_fraction",
+          "low_depth",
+          "low_breadth"
+        ]
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "required": [
+        "html_report"
+      ],
+      "properties": {
+        "html_report": {
+          "type": "string"
+        },
+        "json_report": {
+          "type": "string"
+        },
+        "coverage_plot_png": {
+          "type": "string"
+        },
+        "coverage_tracks_tsv": {
+          "type": "string"
+        }
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "properties": {
+        "min_mapped_pct": {
+          "type": "number"
+        },
+        "min_breadth_1x_pct": {
+          "type": "number"
+        },
+        "max_duplicate_pct": {
+          "type": "number"
+        },
+        "min_mean_depth": {
+          "type": "number"
+        }
+      }
+    }
+  }
+}

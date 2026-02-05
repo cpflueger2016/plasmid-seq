@@ -1,0 +1,93 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "plasmidSeq_2026-02-05/233661",
+  "sample_id": "PL18959_pRS2_E_010",
+  "plasmid_id": "PL18959",
+  "generated_at": "2026-02-05T12:15:00Z",
+  "reference": {
+    "name": "pRS2-E_010_R2",
+    "length_bp": 8421,
+    "cleaned_header_fasta": "3-20kb_plasmids/PL18959_pRS2_E_010/pRS2-E_010_R2_clean.fa",
+    "source_fasta": "3-20kb_plasmids/PL18959_pRS2_E_010/pRS2-E_010_R2.fa"
+  },
+  "status": {
+    "traffic_light": "green",
+    "score": 93.4,
+    "summary": "High mapping and broad reference coverage with acceptable duplicate fraction."
+  },
+  "reads": {
+    "raw_reads_total": 200424,
+    "read_pairs_total": 100212,
+    "reads_after_filtering": 192972,
+    "q30_before_pct": 96.83,
+    "q30_after_pct": 98.68
+  },
+  "mapping": {
+    "tool": "bbmap",
+    "mapped_pct": 98.57,
+    "unambiguous_pct": 71.29,
+    "ambiguous_pct": 27.29,
+    "unmapped_pct": 1.43,
+    "error_rate_pct": 1.14
+  },
+  "duplicates": {
+    "duplicate_reads": 18432,
+    "duplicate_pct": 9.55,
+    "deduplicated_bam": "3-20kb_plasmids/PL18959_pRS2_E_010/PL18959_pRS2_E_010.bam",
+    "markdup_log": "3-20kb_plasmids/PL18959_pRS2_E_010/PL18959_pRS2_E_010_markdup.log"
+  },
+  "coverage": {
+    "reference_read_depth": {
+      "mean_depth": 612.3,
+      "median_depth": 598.0,
+      "max_depth": 1298.0
+    },
+    "assembly_to_reference_depth": {
+      "mean_depth": 0.97,
+      "median_depth": 1.0,
+      "max_depth": 3.0
+    },
+    "breadth": {
+      "at_1x_pct": 99.72,
+      "at_10x_pct": 99.11,
+      "at_30x_pct": 98.46
+    },
+    "zero_coverage_regions": [
+      {
+        "start": 4210,
+        "end": 4221,
+        "length_bp": 12
+      }
+    ],
+    "low_coverage_regions": [
+      {
+        "start": 4178,
+        "end": 4249,
+        "length_bp": 72,
+        "threshold": 10
+      }
+    ]
+  },
+  "assembly": {
+    "unicycler_status": "present",
+    "contig_count": 1,
+    "total_length_bp": 8409,
+    "longest_contig_bp": 8409,
+    "n50_bp": 8409,
+    "assembly_fasta": "3-20kb_plasmids/PL18959_pRS2_E_010/PL18959_pRS2_E_010_unicycler_assembly/PL18959_pRS2_E_010_unicycler_assembly.fasta",
+    "assembly_map_bam": "3-20kb_plasmids/PL18959_pRS2_E_010/PL18959_pRS2_E_010_unicycler_vs_ref.bam"
+  },
+  "flags": [],
+  "artifacts": {
+    "html_report": "3-20kb_plasmids/PL18959_pRS2_E_010/PL18959_pRS2_E_010_sample_report.html",
+    "json_report": "3-20kb_plasmids/PL18959_pRS2_E_010/PL18959_pRS2_E_010_sample_report.json",
+    "coverage_plot_png": "3-20kb_plasmids/PL18959_pRS2_E_010/PL18959_pRS2_E_010_coverage_plot.png",
+    "coverage_tracks_tsv": "3-20kb_plasmids/PL18959_pRS2_E_010/PL18959_pRS2_E_010_coverage_tracks.tsv"
+  },
+  "thresholds": {
+    "min_mapped_pct": 90.0,
+    "min_breadth_1x_pct": 99.0,
+    "max_duplicate_pct": 25.0,
+    "min_mean_depth": 50.0
+  }
+}
