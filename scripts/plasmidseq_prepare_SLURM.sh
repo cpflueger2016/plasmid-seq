@@ -204,8 +204,21 @@ ${db_name}.genome : plasmidSeq dynamic run DB
 EOF
 
   echo "[prep] building snpEff DB: ${db_name}"
-  "${SNPEFF_BIN:-snpEff}" build -genbank -v -c "$cfg_file" -dataDir "$data_dir" "$db_name" \
-    > "${SCRATCH}/Logs/snpeff_build.log" 2>&1
+  local snpeff_log="${SCRATCH}/Logs/snpeff_build.log"
+  local snpeff_env=()
+  if [[ -n "${SNPEFF_JAVA_HOME:-}" && -x "${SNPEFF_JAVA_HOME}/bin/java" ]]; then
+    echo "[prep] using snpEff JAVA_HOME=${SNPEFF_JAVA_HOME}"
+    snpeff_env=(env "JAVA_HOME=${SNPEFF_JAVA_HOME}" "PATH=${SNPEFF_JAVA_HOME}/bin:${PATH}")
+  fi
+  if ! "${snpeff_env[@]}" "${SNPEFF_BIN:-snpEff}" build -genbank -v -c "$cfg_file" -dataDir "$data_dir" "$db_name" \
+    > "$snpeff_log" 2>&1; then
+    echo "[prep][ERROR] snpEff DB build command failed for ${db_name}. See $snpeff_log" >&2
+    return 1
+  fi
+  if [[ ! -s "${db_dir}/snpEffectPredictor.bin" ]]; then
+    echo "[prep][ERROR] snpEff DB build did not produce snpEffectPredictor.bin for ${db_name}. See $snpeff_log" >&2
+    return 1
+  fi
   echo "[prep] snpEff DB ready: db=${db_name} cfg=${cfg_file} dataDir=${data_dir}"
 }
 
