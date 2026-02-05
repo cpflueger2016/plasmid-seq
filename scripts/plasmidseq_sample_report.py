@@ -279,6 +279,7 @@ def build_status(
     breadth_1x: float,
     dup_pct: float,
     mean_depth: float,
+    low_or_zero_region_count: int,
     thresholds: Dict[str, float],
 ) -> Tuple[float, str, List[str], str]:
     score = 100.0
@@ -303,6 +304,9 @@ def build_status(
     if mean_depth < min_md:
         score -= 20.0
         flags.append("low_depth")
+    if low_or_zero_region_count > 0:
+        score -= 10.0
+        flags.append("coverage_gaps_present")
 
     score = max(0.0, min(100.0, score))
     if score >= 85:
@@ -311,9 +315,13 @@ def build_status(
         light = "yellow"
     else:
         light = "red"
+    # Any zero/low-coverage region should not be green; force warn at minimum.
+    if low_or_zero_region_count > 0 and light == "green":
+        light = "yellow"
     summary = (
         f"mapped={mapped_pct if mapped_pct is not None else 'NA'}%, "
-        f"breadth>=1x={breadth_1x:.2f}%, dup={dup_pct:.2f}%, mean_depth={mean_depth:.1f}"
+        f"breadth>=1x={breadth_1x:.2f}%, dup={dup_pct:.2f}%, mean_depth={mean_depth:.1f}, "
+        f"low_or_zero_regions={low_or_zero_region_count}"
     )
     # unique while preserving order
     dedup_flags = list(dict.fromkeys(flags))
@@ -490,6 +498,7 @@ def main() -> int:
         read_cov["at_1x_pct"],
         dup["duplicate_pct"],
         read_cov["mean_depth"],
+        len(low_regions),
         thresholds,
     )
 
