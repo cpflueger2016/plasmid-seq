@@ -1,1 +1,2 @@
 scripts/plasmidseq.local.config
+slurm*.out
