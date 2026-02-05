@@ -244,9 +244,20 @@ if [ "${skipping}" == "FALSE" ]; then
 	cat "${fastQ_f%_S[0-9]*}_bbmap.log"
 				
 	# 4. Sam to Bam conversion, filtering and removal of multimapper
+	# 5. Mark duplicate reads from alignments
+	baseOut="${fastQ_f%_S[0-9]*}"
+	sortedBam="${baseOut}.sorted.bam"
+	finalBam="${baseOut}.bam"
 
-	sambamba view -q -F "not(secondary_alignment)" -S -f bam "${fastQ_f%_S[0-9]*}.sam" |\
-	sambamba sort -q /dev/stdin -o "${fastQ_f%_S[0-9]*}.bam"
+	sambamba view -q -F "not(secondary_alignment)" -S -f bam "${baseOut}.sam" |\
+	sambamba sort -q /dev/stdin -o "${sortedBam}"
+
+	sambamba markdup -t 4 --tmpdir=. "${sortedBam}" "${finalBam}" \
+		&> "${baseOut}_markdup.log"
+	sambamba index -t 2 "${finalBam}"
+	echo
+	cat "${baseOut}_markdup.log"
+	rm -f "${sortedBam}"
 
 fi
 
