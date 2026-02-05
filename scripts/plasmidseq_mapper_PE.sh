@@ -198,18 +198,19 @@ else
 fi
 
 fastaRefFile=${fastaRef}
+sampleBase="${fastQ_f%_S[0-9]*}"
 
 
 # 1. Trim Reads (Nextera Adapters)
 
 fastp -w 4 -q ${qval} \
-	  -i ${fastQ_f} \
-	  -I ${fastQ_r} \
-	  -o "${fastQ_f%_S[0-9]*}_R1_trimmed.fastq" \
-	  -O "${fastQ_r%_S[0-9]*}_R2_trimmed.fastq" \
-	  -h "${fastQ_f%_S[0-9]*}_fastp_report.html" \
-	  -j "${fastQ_f%_S[0-9]*}_fastp_report.json" \
-	  -R "${fastQ_f%_S[0-9]*}_fastp_report" \
+		  -i ${fastQ_f} \
+		  -I ${fastQ_r} \
+		  -o "${sampleBase}_R1_trimmed.fastq" \
+		  -O "${sampleBase}_R2_trimmed.fastq" \
+		  -h "${sampleBase}_fastp_report.html" \
+		  -j "${sampleBase}_fastp_report.json" \
+		  -R "${sampleBase}_fastp_report" \
 	  --adapter_sequence CTGTCTCTTATACAC \
 	  --adapter_sequence_r2 TGTATAAGAGACAG \
 	  -x -y
@@ -226,28 +227,28 @@ if [ "${skipping}" == "FALSE" ]; then
 	fi
 
 	cleanFastaRef="${fastaRefFile%.*}_clean.fa"
-	"${fastaCleaner}" -i "${fastaRefFile}" -o "${cleanFastaRef}" \
-		> "${fastQ_f%_S[0-9]*}_fasta_header_cleanup.log" 2>&1
+		"${fastaCleaner}" -i "${fastaRefFile}" -o "${cleanFastaRef}" \
+			> "${sampleBase}_fasta_header_cleanup.log" 2>&1
 	fastaRef="${cleanFastaRef}"
 
 	# 3. BBMap reference mapping (circular-aware via usemodulo)
 
-	bbmap.sh ref=${fastaRef} \
-				in="${fastQ_f%_S[0-9]*}_R1_trimmed.fastq" \
-				in2="${fastQ_r%_S[0-9]*}_R2_trimmed.fastq" \
-				out="${fastQ_f%_S[0-9]*}.sam" \
-				usemodulo=t \
-				nodisk=t \
-				threads=4 \
-				overwrite=t &> "${fastQ_f%_S[0-9]*}_bbmap.log"
-	echo
-	cat "${fastQ_f%_S[0-9]*}_bbmap.log"
+		bbmap.sh ref=${fastaRef} \
+					in="${sampleBase}_R1_trimmed.fastq" \
+					in2="${sampleBase}_R2_trimmed.fastq" \
+					out="${sampleBase}.sam" \
+					usemodulo=t \
+					nodisk=t \
+					threads=4 \
+					overwrite=t &> "${sampleBase}_bbmap.log"
+		echo
+		cat "${sampleBase}_bbmap.log"
 				
-	# 4. Sam to Bam conversion, filtering and removal of multimapper
-	# 5. Mark duplicate reads from alignments
-	baseOut="${fastQ_f%_S[0-9]*}"
-	sortedBam="${baseOut}.sorted.bam"
-	finalBam="${baseOut}.bam"
+		# 4. Sam to Bam conversion, filtering and removal of multimapper
+		# 5. Mark duplicate reads from alignments
+		baseOut="${sampleBase}"
+		sortedBam="${baseOut}.sorted.bam"
+		finalBam="${baseOut}.bam"
 
 	sambamba view -q -F "not(secondary_alignment)" -S -f bam "${baseOut}.sam" |\
 	sambamba sort -q /dev/stdin -o "${sortedBam}"
@@ -412,6 +413,66 @@ if [ "${skipConsenus}" == "FALSE" ]; then
 		# prepend unique identifier variable to consensus fasta
 		mv ${fastaRef/.fa/_consensus.fa} "${uniqueID}_${fastaRef/.fa/_consensus.fa}"
 
+	fi
+fi
+
+# 7b. Optional: call variants with VarScan (per sample)
+if [[ "${ENABLE_VARIANTS:-0}" == "1" ]]; then
+	varscan_log="${sampleBase}_varscan.log"
+	finalBam="${sampleBase}.bam"
+
+	if [[ "${skipping}" == "TRUE" ]]; then
+		echo "[WARN] ENABLE_VARIANTS=1 but reference mapping was skipped; not running VarScan." | tee -a "${varscan_log}"
+	elif [[ ! -f "${finalBam}" ]]; then
+		echo "[WARN] ENABLE_VARIANTS=1 but BAM not found (${finalBam}); not running VarScan." | tee -a "${varscan_log}"
+	else
+		mpileup_file="${sampleBase}.mpileup"
+		snps_vcf="${sampleBase}_varscan_snps.vcf"
+		indels_vcf="${sampleBase}_varscan_indels.vcf"
+		merged_vcf="${sampleBase}_varscan_merged.vcf"
+
+		min_cov="${VARSCAN_MIN_COVERAGE:-10}"
+		min_var_freq="${VARSCAN_MIN_VAR_FREQ:-0.01}"
+		pval="${VARSCAN_PVALUE:-0.05}"
+
+		echo "[variants] generating mpileup for ${sampleBase}" | tee -a "${varscan_log}"
+		samtools mpileup -f "${fastaRef}" "${finalBam}" > "${mpileup_file}" 2>> "${varscan_log}"
+
+		if [[ -n "${VARSCAN_JAR:-}" && -f "${VARSCAN_JAR}" ]]; then
+			echo "[variants] using VarScan jar: ${VARSCAN_JAR}" | tee -a "${varscan_log}"
+			java -jar "${VARSCAN_JAR}" mpileup2snp "${mpileup_file}" \
+				--min-coverage "${min_cov}" \
+				--min-var-freq "${min_var_freq}" \
+				--p-value "${pval}" \
+				--output-vcf 1 > "${snps_vcf}" 2>> "${varscan_log}"
+			java -jar "${VARSCAN_JAR}" mpileup2indel "${mpileup_file}" \
+				--min-coverage "${min_cov}" \
+				--min-var-freq "${min_var_freq}" \
+				--p-value "${pval}" \
+				--output-vcf 1 > "${indels_vcf}" 2>> "${varscan_log}"
+		elif command -v "${VARSCAN_BIN:-varscan}" >/dev/null 2>&1; then
+			echo "[variants] using VarScan binary: ${VARSCAN_BIN:-varscan}" | tee -a "${varscan_log}"
+			"${VARSCAN_BIN:-varscan}" mpileup2snp "${mpileup_file}" \
+				--min-coverage "${min_cov}" \
+				--min-var-freq "${min_var_freq}" \
+				--p-value "${pval}" \
+				--output-vcf 1 > "${snps_vcf}" 2>> "${varscan_log}"
+			"${VARSCAN_BIN:-varscan}" mpileup2indel "${mpileup_file}" \
+				--min-coverage "${min_cov}" \
+				--min-var-freq "${min_var_freq}" \
+				--p-value "${pval}" \
+				--output-vcf 1 > "${indels_vcf}" 2>> "${varscan_log}"
+		else
+			echo "[WARN] ENABLE_VARIANTS=1 but VarScan not found (set VARSCAN_BIN or VARSCAN_JAR)." | tee -a "${varscan_log}"
+		fi
+
+		if [[ -s "${snps_vcf}" ]]; then
+			cp -f "${snps_vcf}" "${merged_vcf}"
+			if [[ -s "${indels_vcf}" ]]; then
+				grep -v '^#' "${indels_vcf}" >> "${merged_vcf}" || true
+			fi
+			echo "[variants] wrote ${snps_vcf}, ${indels_vcf}, ${merged_vcf}" | tee -a "${varscan_log}"
+		fi
 	fi
 fi
 
