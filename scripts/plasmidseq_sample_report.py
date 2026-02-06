@@ -397,6 +397,68 @@ def parse_variant_outputs(sample_dir: Path, sample_name: str) -> Dict[str, objec
     }
 
 
+def parse_location_ranges(loc: str) -> List[Tuple[int, int]]:
+    loc = loc.strip()
+    if loc.startswith("complement(") and loc.endswith(")"):
+        loc = loc[len("complement("):-1]
+    if loc.startswith("join(") and loc.endswith(")"):
+        loc = loc[len("join("):-1]
+    parts = [p.strip() for p in loc.split(",")]
+    ranges: List[Tuple[int, int]] = []
+    for part in parts:
+        if ".." in part:
+            a, b = part.split("..", 1)
+            try:
+                start = int(a.replace("<", "").replace(">", ""))
+                end = int(b.replace("<", "").replace(">", ""))
+            except ValueError:
+                continue
+            if start > end:
+                start, end = end, start
+            ranges.append((start, end))
+        else:
+            try:
+                pos = int(part.replace("<", "").replace(">", ""))
+            except ValueError:
+                continue
+            ranges.append((pos, pos))
+    return ranges
+
+
+def parse_plannotate_features(sample_dir: Path, max_features: int = 200) -> List[Dict[str, object]]:
+    gbks = sorted(sample_dir.glob("*_plannotate/*.gbk"))
+    if not gbks:
+        return []
+    gbk = gbks[0]
+    features: List[Dict[str, object]] = []
+    current_type = ""
+    current_loc = ""
+    current_label = ""
+    with gbk.open(encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if line.startswith("     ") and not line.startswith("                     "):
+                # flush previous feature
+                if current_label and current_loc and current_type:
+                    for start, end in parse_location_ranges(current_loc):
+                        features.append({"type": current_type, "label": current_label, "start": start, "end": end})
+                # start new feature
+                current_label = ""
+                current_loc = ""
+                current_type = line[5:21].strip()
+                current_loc = line[21:].strip()
+            elif line.startswith("                     /label="):
+                val = line.strip().split("=", 1)[1].strip().strip('"')
+                if val:
+                    current_label = val
+        # flush last
+        if current_label and current_loc and current_type:
+            for start, end in parse_location_ranges(current_loc):
+                features.append({"type": current_type, "label": current_label, "start": start, "end": end})
+    # Sort and cap to avoid overcrowding
+    features.sort(key=lambda x: (x["start"], x["end"]))
+    return features[:max_features]
+
+
 def build_status(
     mapped_pct: Optional[float],
     breadth_1x: float,
@@ -545,6 +607,7 @@ def render_html(
     const asm = {json.dumps(asm_plot)};
     const snpPos = {json.dumps(report["variants"]["high_confidence_snp_positions"])};
     const indelPos = {json.dumps(report["variants"]["high_confidence_indel_positions"])};
+    const features = {json.dumps(report.get("features", []))};
     const totalBp = {total_bp};
     const c = document.getElementById("cov");
     const ctx = c.getContext("2d");
@@ -616,6 +679,28 @@ def render_html(
         vx.stroke();
       }}
     }}
+    // Draw feature bands (from pLannotate) behind variant ticks.
+    if (features && features.length) {{
+      vx.fillStyle = "rgba(209,213,219,0.45)";
+      vx.strokeStyle = "rgba(156,163,175,0.8)";
+      vx.font = "10px Helvetica, Arial, sans-serif";
+      vx.textAlign = "left";
+      const bandTop = vPadT + 6;
+      const bandBottom = axisY - 12;
+      for (let i = 0; i < features.length; i++) {{
+        const f = features[i];
+        const x1 = xForPos(f.start);
+        const x2 = xForPos(f.end);
+        const w = Math.max(1, x2 - x1);
+        vx.fillRect(x1, bandTop, w, Math.max(1, bandBottom - bandTop));
+        if (w >= 40) {{
+          vx.fillStyle = "rgba(55,65,81,0.9)";
+          vx.fillText(f.label, x1 + 2, bandTop + 10);
+          vx.fillStyle = "rgba(209,213,219,0.45)";
+        }}
+      }}
+    }}
+
     drawTicks(snpPos, "#2563eb", vPadT + 12);
     drawTicks(indelPos, "#f97316", vPadT + 30);
   </script>
@@ -674,6 +759,7 @@ def main() -> int:
     bbmap = parse_bbmap_log(sample_dir)
     dup = duplicate_metrics(bam)
     variants = parse_variant_outputs(sample_dir, sample_name)
+    features = parse_plannotate_features(sample_dir)
 
     zero_regions = contiguous_regions(read_depth, lambda d: d == 0)
     low_regions = contiguous_regions(read_depth, lambda d: d < 10)
@@ -795,6 +881,7 @@ def main() -> int:
             "assembly_map_bam": str(asm_bam.name) if asm_bam else "",
         },
         "variants": variants,
+        "features": features,
         "flags": flags,
         "artifacts": {
             "html_report": str(f"{out_prefix.name}.html"),

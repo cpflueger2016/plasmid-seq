@@ -191,13 +191,30 @@ build_snpeff_db() {
       echo "[prep][WARN] could not read contig name from $clean_ref; using ${locus_id} for snpEff locus" >&2
     fi
 
-    # Normalize pLannotate GenBank headers to match reference contig name.
+    # Normalize pLannotate GenBank headers to match reference contig name,
+    # and ensure CDS features have gene/locus_tag based on /label.
     tmp_gbk="${gbk}.tmp"
     awk -v locus="$locus_id" '
+      function is_feature(line) { return line ~ /^     [A-Za-z]/ }
+      function is_cds(line) { return line ~ /^     CDS/ }
+      BEGIN { in_cds=0; gene_seen=0; locus_seen=0 }
       NR == 1 && $1 == "LOCUS" { $2 = locus; print; next }
       $1 == "ACCESSION" { $2 = locus; print; next }
       $1 == "VERSION" { $2 = locus; print; next }
-      { print }
+      {
+        if (is_feature($0)) {
+          in_cds = is_cds($0)
+          gene_seen = 0
+          locus_seen = 0
+        }
+        if (in_cds && $0 ~ /\/gene=/) gene_seen = 1
+        if (in_cds && $0 ~ /\/locus_tag=/) locus_seen = 1
+        if (in_cds && match($0, /\/label=\"([^\"]+)\"/, m)) {
+          if (!gene_seen) { printf "                     /gene=\"%s\"\n", m[1]; gene_seen = 1 }
+          if (!locus_seen) { printf "                     /locus_tag=\"%s\"\n", m[1]; locus_seen = 1 }
+        }
+        print
+      }
     ' "$gbk" > "$tmp_gbk"
     mv -f "$tmp_gbk" "$gbk"
     cat "$gbk" >> "$genes_gbk"
