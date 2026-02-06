@@ -190,12 +190,17 @@ build_snpeff_db() {
       locus_id=$(printf "ref%06d" "$locus_i")
       echo "[prep][WARN] could not read contig name from $clean_ref; using ${locus_id} for snpEff locus" >&2
     fi
+
+    # Normalize pLannotate GenBank headers to match reference contig name.
+    tmp_gbk="${gbk}.tmp"
     awk -v locus="$locus_id" '
       NR == 1 && $1 == "LOCUS" { $2 = locus; print; next }
       $1 == "ACCESSION" { $2 = locus; print; next }
       $1 == "VERSION" { $2 = locus; print; next }
       { print }
-    ' "$gbk" >> "$genes_gbk"
+    ' "$gbk" > "$tmp_gbk"
+    mv -f "$tmp_gbk" "$gbk"
+    cat "$gbk" >> "$genes_gbk"
     echo >> "$genes_gbk"
     n_ann=$((n_ann + 1))
   done
