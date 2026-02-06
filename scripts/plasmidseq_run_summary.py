@@ -9,6 +9,7 @@ import argparse
 import csv
 import html
 import json
+import os
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -47,6 +48,11 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=80.0,
         help="Warn when overall mapping percent is below this value (default: 80).",
+    )
+    parser.add_argument(
+        "--version",
+        default=None,
+        help="Pipeline version string (optional; overrides PLASMIDSEQ_VERSION env var).",
     )
     return parser.parse_args()
 
@@ -398,6 +404,37 @@ def write_csv(path: Path, rows: List[Dict[str, object]]) -> None:
             writer.writerow(row)
 
 
+def collect_tool_versions() -> List[Tuple[str, str]]:
+    tools = [
+        ("bbmap", "bbmap"),
+        ("bowtie2", "bowtie2"),
+        ("samtools", "samtools"),
+        ("sambamba", "sambamba"),
+        ("fastp", "fastp"),
+        ("unicycler", "unicycler"),
+        ("minimap2", "minimap2"),
+        ("varscan", "varscan"),
+        ("snpEff", "snpEff"),
+        ("pLannotate", "plannotate"),
+    ]
+    versions: List[Tuple[str, str]] = []
+    for label, exe in tools:
+        ver = "not found"
+        if exe == "snpEff":
+            cmd = f"{exe} -version"
+        elif exe == "plannotate":
+            cmd = f"{exe} --version"
+        else:
+            cmd = f"{exe} --version"
+        try:
+            out = os.popen(cmd).read().strip()
+            if out:
+                ver = out.splitlines()[0].strip()
+        except Exception:
+            ver = "error"
+        versions.append((label, ver))
+    return versions
+
 def fmt_number(value: object) -> str:
     if value in ("", None):
         return ""
@@ -485,6 +522,8 @@ def render_html(
     rows: List[Dict[str, object]],
     plate_map: Dict[str, Tuple[str, str]],
     low_map_threshold: float,
+    version: str,
+    tool_versions: List[Tuple[str, str]],
 ) -> None:
     total = len(rows)
     n_ok = sum(1 for r in rows if r["issue_flag"] == "ok")
@@ -562,7 +601,8 @@ def render_html(
   <h1>plasmid-seq run summary</h1>
   <div class="meta">
     run_dir: {html.escape(str(run_dir))}<br>
-    low mapping warning threshold: {low_map_threshold:g}%
+    low mapping warning threshold: {low_map_threshold:g}%<br>
+    version: {html.escape(version)}
   </div>
 
   <div class="cards">
@@ -600,6 +640,18 @@ def render_html(
       </tbody>
     </table>
   </div>
+
+  <h2>Programs/softwares used in plasmid-seq v{html.escape(version)}</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Tool</th><th>Version</th></tr>
+      </thead>
+      <tbody>
+        {"".join(f"<tr><td>{html.escape(t)}</td><td>{html.escape(v)}</td></tr>" for t, v in tool_versions)}
+      </tbody>
+    </table>
+  </div>
 </body>
 </html>
 """
@@ -626,7 +678,9 @@ def main() -> int:
     csv_path = Path(f"{out_prefix}.csv")
     html_path = Path(f"{out_prefix}.html")
     write_csv(csv_path, rows)
-    render_html(html_path, run_dir, rows, plate_map, args.low_map_threshold)
+    version = args.version or os.environ.get("PLASMIDSEQ_VERSION", "unknown")
+    tool_versions = collect_tool_versions()
+    render_html(html_path, run_dir, rows, plate_map, args.low_map_threshold, version, tool_versions)
 
     print(f"[summary] samples={len(rows)}")
     print(f"[summary] csv={csv_path}")
