@@ -10,6 +10,7 @@ import csv
 import html
 import json
 import os
+import subprocess
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -404,34 +405,41 @@ def write_csv(path: Path, rows: List[Dict[str, object]]) -> None:
             writer.writerow(row)
 
 
+def run_version(cmd: List[str]) -> str:
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        out = (proc.stdout or proc.stderr or "").strip()
+        if not out:
+            return "unknown"
+        return out.splitlines()[0].strip()
+    except Exception:
+        return "error"
+
+
 def collect_tool_versions() -> List[Tuple[str, str]]:
+    plasmidseq_env = "/group/llshared/shared_conda_envs/plasmidseq/bin"
+    snpeff_env = "/group/llshared/shared_conda_envs/plasmidseq_snpeff_env/bin"
+    plannotate_env = "/group/llshared/shared_conda_envs/plannotate/bin"
+
     tools = [
-        ("bbmap", "bbmap"),
-        ("bowtie2", "bowtie2"),
-        ("samtools", "samtools"),
-        ("sambamba", "sambamba"),
-        ("fastp", "fastp"),
-        ("unicycler", "unicycler"),
-        ("minimap2", "minimap2"),
-        ("varscan", "varscan"),
-        ("snpEff", "snpEff"),
-        ("pLannotate", "plannotate"),
+        ("bbmap", [f"{plasmidseq_env}/bbversion.sh"]),
+        ("bowtie2", [f"{plasmidseq_env}/bowtie2", "--version"]),
+        ("samtools", [f"{plasmidseq_env}/samtools", "--version"]),
+        ("sambamba", [f"{plasmidseq_env}/sambamba"]),
+        ("fastp", [f"{plasmidseq_env}/fastp", "--version"]),
+        ("unicycler", [f"{plasmidseq_env}/unicycler", "--version"]),
+        ("minimap2", [f"{plasmidseq_env}/minimap2", "--version"]),
+        ("varscan", [f"{plasmidseq_env}/varscan"]),
+        ("snpEff", [f"{snpeff_env}/snpEff", "-version"]),
+        ("pLannotate", [f"{plannotate_env}/plannotate", "--version"]),
     ]
     versions: List[Tuple[str, str]] = []
-    for label, exe in tools:
-        ver = "not found"
-        if exe == "snpEff":
-            cmd = f"{exe} -version"
-        elif exe == "plannotate":
-            cmd = f"{exe} --version"
+    for label, cmd in tools:
+        exe = cmd[0]
+        if os.path.exists(exe):
+            ver = run_version(cmd)
         else:
-            cmd = f"{exe} --version"
-        try:
-            out = os.popen(cmd).read().strip()
-            if out:
-                ver = out.splitlines()[0].strip()
-        except Exception:
-            ver = "error"
+            ver = "not found"
         versions.append((label, ver))
     return versions
 
