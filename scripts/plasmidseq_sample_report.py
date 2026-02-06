@@ -697,6 +697,9 @@ def render_html(
     ctx.fillText(readMax.toFixed(1), padL - 6, yMax);
     ctx.fillText(readMean.toFixed(1), padL - 6, yMean);
     ctx.fillText("0", padL - 6, yZero);
+    ctx.textAlign = "right";
+    ctx.textBaseline = "top";
+    ctx.fillText(String({total_bp}), W - padR, H - padB + 6);
     draw(read, "#2563eb");
     draw(asm, "#f97316");
 
