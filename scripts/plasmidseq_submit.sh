@@ -6,6 +6,7 @@ set -euo pipefail
 DEFAULT_TSV=""
 DEFAULT_REFS=""
 MAX_CONCURRENT=""
+PLASMIDSEQ_VERSION="1.0"
 log_file="" 
 plasmidSeqData=""
 tsv=""
@@ -31,6 +32,7 @@ Optional:
   -c <file>  Config file path (default precedence: local config, then plasmidseq.config)
   -w <file>  Plate map CSV for run summary (columns: PLid,plate,position)
   -l <file>  Submit log file (default: <plasmidSeqData>/plasmidseq_submit_<date>.log)
+  -v         Print version and exit
   -V         Enable VarScan variant calling (overrides config)
   -N         Disable VarScan variant calling (overrides config)
   -E         Enable snpEff annotation (overrides config; implies variants on)
@@ -46,7 +48,7 @@ EOF
 }
 
 
-while getopts ":d:t:f:p:l:c:w:VNESh" opt; do
+while getopts ":d:t:f:p:l:c:w:vVNESh" opt; do
   case "$opt" in
     d) plasmidSeqData="$OPTARG" ;;
     t) tsv="$OPTARG" ;;
@@ -55,6 +57,7 @@ while getopts ":d:t:f:p:l:c:w:VNESh" opt; do
     c) PLASMIDSEQ_CONFIG="$OPTARG" ;;
     w) PLATE_MAP_CSV="$OPTARG" ;;
     l) log_file="$OPTARG" ;;
+    v) echo "plasmid-seq version ${PLASMIDSEQ_VERSION}"; exit 0 ;;
     V) CLI_ENABLE_VARIANTS="1" ;;
     N) CLI_ENABLE_VARIANTS="0" ;;
     E) CLI_ENABLE_SNPEFF="1" ;;
@@ -164,6 +167,7 @@ echo "[submit] logging to: $log_file"
 
 
 echo "[submit] jobdate=$jobdate"
+echo "[submit] version=${PLASMIDSEQ_VERSION}"
 echo "[submit] plasmidSeqData=$plasmidSeqData"
 echo "[submit] TSV=$tsv"
 echo "[submit] REFS=$refs"
