@@ -192,6 +192,8 @@ build_snpeff_db() {
     fi
     awk -v locus="$locus_id" '
       NR == 1 && $1 == "LOCUS" { $2 = locus; print; next }
+      $1 == "ACCESSION" { $2 = locus; print; next }
+      $1 == "VERSION" { $2 = locus; print; next }
       { print }
     ' "$gbk" >> "$genes_gbk"
     echo >> "$genes_gbk"
