@@ -74,6 +74,8 @@ def parse_fastp_json(sample_dir: Path) -> Dict[str, Optional[float]]:
     }
     files = sorted(sample_dir.glob("*_fastp_report.json"))
     if not files:
+        files = sorted((sample_dir / "Summary").glob("*_fastp_report.json"))
+    if not files:
         return out
     try:
         data = json.loads(files[0].read_text(encoding="utf-8"))
@@ -98,6 +100,8 @@ def parse_bbmap_log(sample_dir: Path) -> Dict[str, Optional[float]]:
         "ambiguous_pct": None,
     }
     logs = sorted(sample_dir.glob("*_bbmap.log"))
+    if not logs:
+        logs = sorted((sample_dir / "Logs").glob("*_bbmap.log"))
     if not logs:
         return out
     text = logs[0].read_text(encoding="utf-8", errors="ignore")
@@ -145,6 +149,8 @@ def locate_reference_fasta(sample_dir: Path) -> Optional[Path]:
 
 def locate_primary_bam(sample_dir: Path) -> Optional[Path]:
     bams = [p for p in sorted(sample_dir.glob("*.bam")) if "unicycler_vs_ref" not in p.name]
+    if not bams:
+        bams = [p for p in sorted((sample_dir / "BAM").glob("*.bam")) if "unicycler_vs_ref" not in p.name]
     return bams[0] if bams else None
 
 
@@ -313,6 +319,8 @@ def parse_snpeff_impacts(path: Path) -> Dict[str, int]:
 
 def parse_varscan_summary(sample_dir: Path, sample_name: str) -> Dict[str, str]:
     summary_path = sample_dir / f"{sample_name}_varscan_summary.tsv"
+    if not summary_path.exists():
+        summary_path = sample_dir / "SNP_INDEL" / f"{sample_name}_varscan_summary.tsv"
     out = {"snpeff_status": "", "snpeff_vcf": ""}
     if not summary_path.exists():
         return out
@@ -325,6 +333,28 @@ def parse_varscan_summary(sample_dir: Path, sample_name: str) -> Dict[str, str]:
     out["snpeff_status"] = row.get("snpeff_status", "")
     out["snpeff_vcf"] = row.get("snpeff_vcf", "")
     return out
+
+
+def parse_varscan_positions_by_filter(path: Path, require_pass: bool = True) -> List[int]:
+    positions: List[int] = []
+    if not path.exists():
+        return positions
+    with path.open(encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if not line.strip() or line.startswith("#"):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 7:
+                continue
+            filt = parts[6]
+            if require_pass and filt != "PASS":
+                continue
+            try:
+                pos = int(parts[1])
+            except ValueError:
+                continue
+            positions.append(pos)
+    return positions
 
 
 def parse_high_conf_variant_positions(path: Path, min_freq_pct: float = 75.0, min_dp: int = 20) -> List[int]:
@@ -362,6 +392,11 @@ def parse_variant_outputs(sample_dir: Path, sample_name: str) -> Dict[str, objec
     indels_vcf = sample_dir / f"{sample_name}_varscan_indels.vcf"
     merged_vcf = sample_dir / f"{sample_name}_varscan_merged.vcf"
     snpeff_vcf = sample_dir / f"{sample_name}_varscan_snpeff.vcf"
+    if not snps_vcf.exists() and not indels_vcf.exists() and not merged_vcf.exists():
+        snps_vcf = sample_dir / "SNP_INDEL" / f"{sample_name}_varscan_snps.vcf"
+        indels_vcf = sample_dir / "SNP_INDEL" / f"{sample_name}_varscan_indels.vcf"
+        merged_vcf = sample_dir / "SNP_INDEL" / f"{sample_name}_varscan_merged.vcf"
+        snpeff_vcf = sample_dir / "SNP_INDEL" / f"{sample_name}_varscan_snpeff.vcf"
 
     snp_count = count_vcf_records(snps_vcf)
     indel_count = count_vcf_records(indels_vcf)
@@ -371,6 +406,10 @@ def parse_variant_outputs(sample_dir: Path, sample_name: str) -> Dict[str, objec
     summary = parse_varscan_summary(sample_dir, sample_name)
     high_conf_snps = parse_high_conf_variant_positions(snps_vcf)
     high_conf_indels = parse_high_conf_variant_positions(indels_vcf)
+
+    # Medium+ confidence: PASS only (user-requested)
+    med_snps = parse_varscan_positions_by_filter(snps_vcf, require_pass=True)
+    med_indels = parse_varscan_positions_by_filter(indels_vcf, require_pass=True)
 
     snpeff_status = "present" if snpeff_vcf.exists() else "missing"
     if summary.get("snpeff_status"):
@@ -394,6 +433,11 @@ def parse_variant_outputs(sample_dir: Path, sample_name: str) -> Dict[str, objec
         "high_confidence_total": len(high_conf_snps) + len(high_conf_indels),
         "high_confidence_snp_positions": high_conf_snps,
         "high_confidence_indel_positions": high_conf_indels,
+        "medplus_snp_count": len(med_snps),
+        "medplus_indel_count": len(med_indels),
+        "medplus_total": len(med_snps) + len(med_indels),
+        "medplus_snp_positions": med_snps,
+        "medplus_indel_positions": med_indels,
     }
 
 
@@ -427,6 +471,8 @@ def parse_location_ranges(loc: str) -> List[Tuple[int, int]]:
 
 def parse_plannotate_features(sample_dir: Path, max_features: int = 200) -> List[Dict[str, object]]:
     gbks = sorted(sample_dir.glob("*_plannotate/*.gbk"))
+    if not gbks:
+        gbks = sorted((sample_dir / "Summary").glob("*.gbk"))
     if not gbks:
         return []
     gbk = gbks[0]
@@ -590,6 +636,7 @@ def render_html(
       <tr><td>VarScan SNPs</td><td>{report["variants"]["snp_count"]}</td></tr>
       <tr><td>VarScan Indels</td><td>{report["variants"]["indel_count"]}</td></tr>
       <tr><td>Total Variants</td><td>{report["variants"]["total_variants"]}</td></tr>
+      <tr><td>Medium+ SNP/INDEL (PASS)</td><td>{report["variants"]["medplus_snp_count"]}/{report["variants"]["medplus_indel_count"]}</td></tr>
       <tr><td>High-confidence SNP/INDEL</td><td>{report["variants"]["high_confidence_snp_count"]}/{report["variants"]["high_confidence_indel_count"]}</td></tr>
       <tr><td>snpEff Status</td><td>{report["variants"]["snpeff_status"]}</td></tr>
       <tr><td>snpEff HIGH/MODERATE</td><td>{report["variants"]["snpeff_impact_counts"]["HIGH"]}/{report["variants"]["snpeff_impact_counts"]["MODERATE"]}</td></tr>
@@ -607,6 +654,8 @@ def render_html(
     const asm = {json.dumps(asm_plot)};
     const snpPos = {json.dumps(report["variants"]["high_confidence_snp_positions"])};
     const indelPos = {json.dumps(report["variants"]["high_confidence_indel_positions"])};
+    const medSnpPos = {json.dumps(report["variants"]["medplus_snp_positions"])};
+    const medIndelPos = {json.dumps(report["variants"]["medplus_indel_positions"])};
     const features = {json.dumps(report.get("features", []))};
     const totalBp = {total_bp};
     const c = document.getElementById("cov");
@@ -645,8 +694,8 @@ def render_html(
     ctx.font = "12px Helvetica, Arial, sans-serif";
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
-    ctx.fillText("max read: " + readMax.toFixed(1), padL - 6, yMax);
-    ctx.fillText("mean read: " + readMean.toFixed(1), padL - 6, yMean);
+    ctx.fillText(readMax.toFixed(1), padL - 6, yMax);
+    ctx.fillText(readMean.toFixed(1), padL - 6, yMean);
     ctx.fillText("0", padL - 6, yZero);
     draw(read, "#2563eb");
     draw(asm, "#f97316");
@@ -664,6 +713,7 @@ def render_html(
     vx.font = "12px Helvetica, Arial, sans-serif";
     vx.textAlign = "right";
     vx.fillText("0", vPadL - 6, axisY + 4);
+    vx.textAlign = "right";
     vx.fillText(String(totalBp), VW - vPadR, axisY + 16);
     function xForPos(pos) {{
       return vPadL + (VW - vPadL - vPadR) * ((Math.max(1, pos) - 1) / Math.max(1, totalBp - 1));
@@ -679,13 +729,17 @@ def render_html(
         vx.stroke();
       }}
     }}
-    // Draw feature bands (from pLannotate) behind variant ticks.
+    // Draw medium+ variant ticks above features to avoid occlusion.
+    drawTicks(medSnpPos, "#2563eb", vPadT + 6);
+    drawTicks(medIndelPos, "#f97316", vPadT + 18);
+
+    // Draw feature bands (from pLannotate) below variant ticks.
     if (features && features.length) {{
       vx.fillStyle = "rgba(209,213,219,0.45)";
       vx.strokeStyle = "rgba(156,163,175,0.8)";
       vx.font = "10px Helvetica, Arial, sans-serif";
       vx.textAlign = "left";
-      const bandTop = vPadT + 6;
+      const bandTop = vPadT + 28;
       const bandBottom = axisY - 12;
       for (let i = 0; i < features.length; i++) {{
         const f = features[i];
@@ -701,8 +755,9 @@ def render_html(
       }}
     }}
 
-    drawTicks(snpPos, "#2563eb", vPadT + 12);
-    drawTicks(indelPos, "#f97316", vPadT + 30);
+    // High-confidence ticks (optional): draw on top of medium+ to highlight.
+    drawTicks(snpPos, "#0ea5e9", vPadT + 6);
+    drawTicks(indelPos, "#fb923c", vPadT + 18);
   </script>
 </body>
 </html>
