@@ -185,7 +185,11 @@ build_snpeff_db() {
 
     locus_i=$((locus_i + 1))
     local locus_id
-    locus_id=$(printf "ref%06d" "$locus_i")
+    locus_id=$(grep -m 1 '^>' "$clean_ref" | sed 's/^>//' | awk '{print $1}')
+    if [[ -z "$locus_id" ]]; then
+      locus_id=$(printf "ref%06d" "$locus_i")
+      echo "[prep][WARN] could not read contig name from $clean_ref; using ${locus_id} for snpEff locus" >&2
+    fi
     awk -v locus="$locus_id" '
       NR == 1 && $1 == "LOCUS" { $2 = locus; print; next }
       { print }
