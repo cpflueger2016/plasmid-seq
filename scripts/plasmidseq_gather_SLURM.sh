@@ -138,6 +138,64 @@ else
   echo "[gather] per-sample reports generated: $report_count"
 fi
 
+# Organize per-sample output folders.
+organize_sample_dir() {
+  local sample_dir="$1"
+  [[ -d "$sample_dir" ]] || return 0
+
+  local logs_dir="$sample_dir/Logs"
+  local summary_dir="$sample_dir/Summary"
+  local snp_dir="$sample_dir/SNP_INDEL"
+  local fastq_dir="$sample_dir/FASTQ"
+  local bam_dir="$sample_dir/BAM"
+
+  mkdir -p "$logs_dir" "$summary_dir" "$snp_dir" "$fastq_dir" "$bam_dir"
+
+  # Logs and small status files
+  mv -f "$sample_dir"/*_log "$logs_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/*_markdup.log "$logs_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/*_bbmap.log "$logs_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/*_varscan.log "$logs_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/*_fasta_header_cleanup.log "$logs_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/*_unicycler_vs_ref.log "$logs_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/FASTA_REF_* "$logs_dir"/ 2>/dev/null || true
+
+  # Summary reports
+  mv -f "$sample_dir"/*_fastp_report.html "$summary_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/*_fastp_report.json "$summary_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/*_sample_report.html "$summary_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/*_sample_report.json "$summary_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/*_sample_report_coverage_tracks.tsv "$summary_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/snpEff_summary.html "$summary_dir"/ 2>/dev/null || true
+
+  # SNP / INDEL outputs
+  mv -f "$sample_dir"/*_varscan_*.vcf "$snp_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/*_varscan_summary.tsv "$snp_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/snpEff_genes.txt "$snp_dir"/ 2>/dev/null || true
+
+  # FASTQ (raw)
+  mv -f "$sample_dir"/*_R1_001.fastq.gz "$fastq_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/*_R2_001.fastq.gz "$fastq_dir"/ 2>/dev/null || true
+
+  # Remove trimmed FASTQ files
+  rm -f "$sample_dir"/*_R1_trimmed.fastq "$sample_dir"/*_R2_trimmed.fastq 2>/dev/null || true
+  rm -f "$sample_dir"/*_R1_trimmed.fastq.gz "$sample_dir"/*_R2_trimmed.fastq.gz 2>/dev/null || true
+
+  # BAM / BAI / mpileup (compress mpileup)
+  if compgen -G "$sample_dir/*.mpileup" >/dev/null; then
+    gzip -f "$sample_dir"/*.mpileup 2>/dev/null || true
+  fi
+  mv -f "$sample_dir"/*.bam "$bam_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/*.bam.bai "$bam_dir"/ 2>/dev/null || true
+  mv -f "$sample_dir"/*.mpileup.gz "$bam_dir"/ 2>/dev/null || true
+
+  # Keep unicycler assembly dir in place (no move)
+}
+
+while IFS= read -r sample_dir; do
+  organize_sample_dir "$sample_dir"
+done < <(find "$RESULTS" -mindepth 2 -maxdepth 2 -type d -path "*/3-20kb_plasmids/*")
+
 # Preserve all gather/map logs in RESULTS for easier debugging
 if [[ -d "$SCRATCH/Logs" ]]; then
   mkdir -p "$RESULTS/Logs"
