@@ -48,6 +48,19 @@ cd "$SCRATCH"
 find . -mindepth 1 -maxdepth 1 -type d ! \( -name "Fasta_Reference_Files" -o -name "Stats" -o -name "Reports" -o -name "Logs" \) \
   -exec mv -t "$RESULTS" {} +
 
+# Normalize pLannotate GBK headers in RESULTS using the snpEff build copies.
+if [[ -d "$RESULTS/snpEff_build" ]]; then
+  while IFS= read -r gbk; do
+    sample_dir="$(basename "$(dirname "$gbk")")"
+    sample_name="${sample_dir%_plannotate}"
+    target_gbk="$RESULTS/3-20kb_plasmids/${sample_name}/${sample_name}_plannotate/$(basename "$gbk")"
+    if [[ -f "$target_gbk" ]]; then
+      cp -f "$gbk" "$target_gbk"
+      echo "[gather] updated pLannotate GBK header: $target_gbk"
+    fi
+  done < <(find "$RESULTS/snpEff_build" -type f -name "*.gbk")
+fi
+
 # Optionally build run summary (CSV + HTML) before copying to Aligned.
 SUMMARY_SCRIPT=""
 SAMPLE_REPORT_SCRIPT=""
