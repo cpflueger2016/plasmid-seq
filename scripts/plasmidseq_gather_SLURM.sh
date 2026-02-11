@@ -193,8 +193,14 @@ organize_sample_dir() {
 }
 
 while IFS= read -r sample_dir; do
-  organize_sample_dir "$sample_dir"
-done < <(find "$RESULTS" -mindepth 2 -maxdepth 2 -type d -path "*/3-20kb_plasmids/*")
+  # Detect sample directories by expected files instead of a hard-coded project name.
+  if compgen -G "$sample_dir/*_R1_001.fastq.gz" >/dev/null || \
+     compgen -G "$sample_dir/*_R2_001.fastq.gz" >/dev/null || \
+     compgen -G "$sample_dir/*_fastp_report.json" >/dev/null || \
+     [[ -f "$sample_dir/FASTA_REF_FOUND" ]]; then
+    organize_sample_dir "$sample_dir"
+  fi
+done < <(find "$RESULTS" -mindepth 2 -maxdepth 2 -type d ! -path "*/Logs*")
 
 # Preserve all gather/map logs in RESULTS for easier debugging
 if [[ -d "$SCRATCH/Logs" ]]; then
