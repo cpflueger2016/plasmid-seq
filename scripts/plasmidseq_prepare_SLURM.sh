@@ -209,9 +209,11 @@ build_snpeff_db() {
         }
         if (in_cds && $0 ~ /\/gene=/) gene_seen = 1
         if (in_cds && $0 ~ /\/locus_tag=/) locus_seen = 1
-        if (in_cds && match($0, /\/label=\"([^\"]+)\"/, m)) {
-          if (!gene_seen) { printf "                     /gene=\"%s\"\n", m[1]; gene_seen = 1 }
-          if (!locus_seen) { printf "                     /locus_tag=\"%s\"\n", m[1]; locus_seen = 1 }
+        if (in_cds && match($0, /\/label="([^"]+)"/, m)) {
+          gene_label = m[1]
+          gene_id = locus "|" gene_label
+          if (!gene_seen) { printf "                     /gene=\"%s\"\n", gene_id; gene_seen = 1 }
+          if (!locus_seen) { printf "                     /locus_tag=\"%s\"\n", gene_id; locus_seen = 1 }
         }
         print
       }

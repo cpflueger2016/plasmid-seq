@@ -13,6 +13,7 @@ cleanSPADES=1
 minLengthSPADES=0
 uniqueID=""
 runUnicycler=0
+threads="${THREADS:-${SLURM_CPUS_PER_TASK:-4}}"
 scriptDir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 fastaCleaner="${scriptDir}/plasmidseq_clean_fasta_headers.sh"
 
@@ -76,6 +77,7 @@ OPTIONS:
     -r    <ref.fa> Fasta reference file for mapping with BBMap. Optional. Must end in *.fa !
     -s    skip SPADES plasmid de-novo assembly
     -q    quality score for trimming, default = 20
+    -n    number of threads to use (default: \$THREADS, then \$SLURM_CPUS_PER_TASK, else 4)
     -c    clean up SPADES assembly directory and only save simplified_contigs that contain sequences, default = FALSE	
     -m    minimum length of SPADES assembly to be filtered out, default = Disabled
     -u    unique ID to prepend file names with and fasta entries of SPADES nodes
@@ -100,7 +102,7 @@ EOF
 }
 
 #parse the options
-while getopts "1:2:r:q:m:u:syckz" o; do
+while getopts "1:2:r:q:n:m:u:syckz" o; do
     case "${o}" in
         1)
             fastQ_f=${OPTARG}
@@ -119,6 +121,9 @@ while getopts "1:2:r:q:m:u:syckz" o; do
             ;;
         q)
             qval=${OPTARG}
+            ;;
+        n)
+            threads=${OPTARG}
             ;;
         m)
             minLengthSPADES=${OPTARG}
@@ -157,6 +162,7 @@ echo "fastaRef: $fastaRef"
 echo "skipSpadesDenovoAssembly: $skipSpadesDenovoAssembly"
 echo "cleanSPADES: $cleanSPADES"
 echo "qval: $qval"
+echo "threads: $threads"
 echo "minLengthSPADES: $minLengthSPADES"
 echo "uniqueID: $uniqueID"
 echo "runUnicycler: $runUnicycler"
@@ -197,13 +203,18 @@ else
 	skipping="FALSE"
 fi
 
+if ! [[ "${threads}" =~ ^[0-9]+$ ]] || [[ "${threads}" -lt 1 ]]; then
+  echo "Invalid thread count: '${threads}'. Must be a positive integer." >&2
+  exit 1
+fi
+
 fastaRefFile=${fastaRef}
 sampleBase="${fastQ_f%_S[0-9]*}"
 
 
 # 1. Trim Reads (Nextera Adapters)
 
-fastp -w 4 -q ${qval} \
+fastp -w "${threads}" -q ${qval} \
 		  -i ${fastQ_f} \
 		  -I ${fastQ_r} \
 		  -o "${sampleBase}_R1_trimmed.fastq" \
@@ -242,7 +253,7 @@ if [ "${skipping}" == "FALSE" ]; then
 					out="${sampleBase}.sam" \
 					usemodulo=t \
 					nodisk=t \
-					threads=4 \
+					threads="${threads}" \
 					overwrite=t &> "${sampleBase}_bbmap.log"
 		echo
 		cat "${sampleBase}_bbmap.log"
@@ -256,7 +267,7 @@ if [ "${skipping}" == "FALSE" ]; then
 	sambamba view -q -F "not(secondary_alignment)" -S -f bam "${baseOut}.sam" |\
 	sambamba sort -q /dev/stdin -o "${sortedBam}"
 
-	sambamba markdup -t 4 --tmpdir=. "${sortedBam}" "${finalBam}" \
+	sambamba markdup -t "${threads}" --tmpdir=. "${sortedBam}" "${finalBam}" \
 		&> "${baseOut}_markdup.log"
 	sambamba index -t 2 "${finalBam}"
 	echo
@@ -550,10 +561,10 @@ if [ "${assembleUnmappedReads}" == "TRUE" ]; then
 	mkdir ${unmapped_reads_dir}
 
 	# extract unmapped reads from bam file
-	samtools view -@ 2 -f4 -bh "${fastQ_f%_S[0-9]*}.bam" > "${fastQ_f%_S[0-9]*}.unmapped.bam"
+	samtools view -@ "${threads}" -f4 -bh "${fastQ_f%_S[0-9]*}.bam" > "${fastQ_f%_S[0-9]*}.unmapped.bam"
 
 	# convert unmapped bam to fastq files
-	samtools fastq -@ 2 "${fastQ_f%_S[0-9]*}.unmapped.bam" \
+	samtools fastq -@ "${threads}" "${fastQ_f%_S[0-9]*}.unmapped.bam" \
 	-1 "${fastQ_f%_S[0-9]*}.unmapped.R1.fastq.gz" \
 	-2 "${fastQ_f%_S[0-9]*}.unmapped.R2.fastq.gz" \
 	-0 /dev/null -s /dev/null -n

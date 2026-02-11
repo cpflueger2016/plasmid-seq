@@ -6,6 +6,7 @@ set -euo pipefail
 DEFAULT_TSV=""
 DEFAULT_REFS=""
 MAX_CONCURRENT=""
+MAP_CPUS=""
 PLASMIDSEQ_VERSION="1.0"
 log_file="" 
 plasmidSeqData=""
@@ -29,6 +30,7 @@ Optional:
   -t <file>  PL_to_fasta.tsv path (default: ${DEFAULT_TSV})
   -f <dir>   Fasta reference folder path (default: ${DEFAULT_REFS})
   -p <int>   Max concurrent array tasks (default: ${MAX_CONCURRENT})
+  -J <int>   CPUs per mapper array task (default: ${MAP_CPUS})
   -c <file>  Config file path (default precedence: local config, then plasmidseq.config)
   -w <file>  Plate map CSV for run summary (columns: PLid,plate,position)
   -l <file>  Submit log file (default: <plasmidSeqData>/plasmidseq_submit_<date>.log)
@@ -48,12 +50,13 @@ EOF
 }
 
 
-while getopts ":d:t:f:p:l:c:w:vVNESh" opt; do
+while getopts ":d:t:f:p:J:l:c:w:vVNESh" opt; do
   case "$opt" in
     d) plasmidSeqData="$OPTARG" ;;
     t) tsv="$OPTARG" ;;
     f) refs="$OPTARG" ;;
     p) MAX_CONCURRENT="$OPTARG" ;;
+    J) MAP_CPUS="$OPTARG" ;;
     c) PLASMIDSEQ_CONFIG="$OPTARG" ;;
     w) PLATE_MAP_CSV="$OPTARG" ;;
     l) log_file="$OPTARG" ;;
@@ -123,6 +126,7 @@ load_config
 tsv="${tsv:-${DEFAULT_TSV}}"
 refs="${refs:-${DEFAULT_REFS}}"
 MAX_CONCURRENT="${MAX_CONCURRENT:-${MAX_CONCURRENT_DEFAULT:-50}}"
+MAP_CPUS="${MAP_CPUS:-${MAP_CPUS_DEFAULT:-4}}"
 RESULTS_BASE="${RESULTS_BASE:-/group/llshared/PlasmidSeq/Results}"
 MAX_ARRAY_SIZE="${MAX_ARRAY_SIZE:-1001}"
 
@@ -173,6 +177,7 @@ echo "[submit] TSV=$tsv"
 echo "[submit] REFS=$refs"
 echo "[submit] PLATE_MAP_CSV=${PLATE_MAP_CSV:-<none>}"
 echo "[submit] max_concurrent=$MAX_CONCURRENT"
+echo "[submit] map_cpus=$MAP_CPUS"
 echo "[submit] ENABLE_VARIANTS=${ENABLE_VARIANTS:-0}"
 echo "[submit] ENABLE_SNPEFF=${ENABLE_SNPEFF:-0}"
 
@@ -260,6 +265,7 @@ while [[ $offset -lt $n_jobs ]]; do
 
   array_jobid=$(sbatch --parsable \
     --dependency=afterok:"$prep_jobid" \
+    --cpus-per-task="${MAP_CPUS}" \
     --array=0-${last_index}%${MAX_CONCURRENT} \
     --output="$SCRATCH/Logs/slurm-%A_%a.out" \
     --error="$SCRATCH/Logs/slurm-%A_%a.out" \
