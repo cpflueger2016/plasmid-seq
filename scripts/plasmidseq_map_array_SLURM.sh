@@ -1,7 +1,7 @@
 #!/bin/bash --login
 #SBATCH --job-name=plasmidSeq_map
 #SBATCH --partition=work
-#SBATCH --mem-per-cpu=4G
+#SBATCH --mem-per-cpu=8G
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4

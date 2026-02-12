@@ -61,6 +61,22 @@ Figures produced:
 - `runtime_vs_reads.(png|pdf)`
 - `benchmark_summary_table.csv`
 
+## 4) Per-step bottleneck timing (mapper internals)
+
+Mapper logs now include `[timing]` lines per major stage (fastp, BBMap+markdup, SPAdes, Unicycler, variants, cleanup, total sample).
+
+Extract them into CSV:
+
+```bash
+python scripts/benchmark/collect_step_timings.py \
+  -i "/group/llshared/PlasmidSeq/Results/plasmidSeq_YYYY-MM-DD/<runid>/Logs/slurm-*_*.out" \
+  -o scripts/benchmark/runs/<timestamp>/step_timings.csv
+```
+
+Outputs:
+- `step_timings.csv`: one row per sample/step with `elapsed_s`
+- `step_timings.summary.csv`: per-step `n`, `mean`, `median`, `p95`, `max`
+
 ## Notes
 
 - Benchmark validity depends on mapper thread scaling. This pipeline now supports variable mapper CPUs via submit option `-J`.

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ### Maps a plasmid against a BBMap reference (circular-aware) as well as de novo assembles fastq file
-### requires: fastp, bbmap, sambamba, SPAdes, samtools, seqkit, pigz, bcftools, tabix, unicycler, pilon, java
+### requires: fastp, bbmap, SPAdes, samtools, seqkit, pigz, bcftools, tabix, unicycler, pilon, java
 ### version 0.8.2
 
 version="0.8.2"
@@ -29,12 +29,12 @@ if ! [ -x "$(command -v bbmap.sh)" ]; then
   exit 1
 fi
 
-if ! [ -x "$(command -v sambamba)" ]; then
-  echo 'Error: sambamba is not installed. Try installing with "conda install -c bioconda sambamba' >&2
-  exit 1
-fi
 if ! [ -x "$(command -v pigz)" ]; then
   echo 'Error: pigz is not installed. Try installing with "conda install pigz' >&2
+  exit 1
+fi
+if ! [ -x "$(command -v samtools)" ]; then
+  echo 'Error: samtools is not installed. Try installing with "conda install -c bioconda samtools' >&2
   exit 1
 fi
 if ! [ -x "$(command -v bcftools)" ]; then
@@ -211,9 +211,30 @@ fi
 fastaRefFile=${fastaRef}
 sampleBase="${fastQ_f%_S[0-9]*}"
 
+timestamp_now() {
+	date +%Y-%m-%dT%H:%M:%S%z
+}
+
+log_step_start() {
+	local step="$1"
+	echo "[timing] step=${step} status=start ts=$(timestamp_now)"
+}
+
+log_step_end() {
+	local step="$1"
+	local start_s="$2"
+	local end_s
+	end_s=$(date +%s)
+	echo "[timing] step=${step} status=end elapsed_s=$((end_s - start_s)) ts=$(timestamp_now)"
+}
+
+pipeline_t0=$(date +%s)
+echo "[timing] sample=${sampleBase} status=start ts=$(timestamp_now)"
+
 
 # 1. Trim Reads (Nextera Adapters)
-
+step_t0=$(date +%s)
+log_step_start "fastp_trim"
 fastp -w "${threads}" -q ${qval} \
 		  -i ${fastQ_f} \
 		  -I ${fastQ_r} \
@@ -225,6 +246,7 @@ fastp -w "${threads}" -q ${qval} \
 	  --adapter_sequence CTGTCTCTTATACAC \
 	  --adapter_sequence_r2 TGTATAAGAGACAG \
 	  -x -y
+log_step_end "fastp_trim" "${step_t0}"
 
 
 
@@ -232,6 +254,8 @@ fastp -w "${threads}" -q ${qval} \
 
 if [ "${skipping}" == "FALSE" ]; then
 	# 2. Clean FASTA headers for robust mapping compatibility
+	step_t0=$(date +%s)
+	log_step_start "fasta_header_clean"
 	if [[ "${fastaRefFile}" == *_clean.fa || "${fastaRefFile}" == *_clean.fasta ]]; then
 		cleanFastaRef="${fastaRefFile}"
 	else
@@ -244,8 +268,11 @@ if [ "${skipping}" == "FALSE" ]; then
 			> "${sampleBase}_fasta_header_cleanup.log" 2>&1
 	fi
 	fastaRef="${cleanFastaRef}"
+	log_step_end "fasta_header_clean" "${step_t0}"
 
 	# 3. BBMap reference mapping (circular-aware via usemodulo)
+	step_t0=$(date +%s)
+	log_step_start "bbmap_map_and_markdup"
 
 		bbmap.sh ref=${fastaRef} \
 					in="${sampleBase}_R1_trimmed.fastq" \
@@ -258,27 +285,35 @@ if [ "${skipping}" == "FALSE" ]; then
 		echo
 		cat "${sampleBase}_bbmap.log"
 				
-		# 4. Sam to Bam conversion, filtering and removal of multimapper
-		# 5. Mark duplicate reads from alignments
+		# 4. Sam to Bam conversion and duplicate marking
 		baseOut="${sampleBase}"
-		sortedBam="${baseOut}.sorted.bam"
+		primaryBam="${baseOut}.primary.bam"
+		nameSortedBam="${baseOut}.namesorted.bam"
+		fixmateBam="${baseOut}.fixmate.bam"
+		coordSortedBam="${baseOut}.coordsorted.bam"
 		finalBam="${baseOut}.bam"
 
-	sambamba view -q -F "not(secondary_alignment)" -S -f bam "${baseOut}.sam" |\
-	sambamba sort -q /dev/stdin -o "${sortedBam}"
+	# Drop secondary alignments (samtools flag 0x100) prior to markdup.
+	samtools view -@ "${threads}" -F 256 -b "${baseOut}.sam" > "${primaryBam}"
+	samtools sort -@ "${threads}" -n -o "${nameSortedBam}" "${primaryBam}"
+	samtools fixmate -@ "${threads}" -m "${nameSortedBam}" "${fixmateBam}"
+	samtools sort -@ "${threads}" -o "${coordSortedBam}" "${fixmateBam}"
+	samtools markdup -@ "${threads}" "${coordSortedBam}" "${finalBam}" \
+		> "${baseOut}_markdup.log" 2>&1
 
-	sambamba markdup -t "${threads}" --tmpdir=. "${sortedBam}" "${finalBam}" \
-		&> "${baseOut}_markdup.log"
-	sambamba index -t 2 "${finalBam}"
+	samtools index -@ "${threads}" "${finalBam}"
 	echo
 	cat "${baseOut}_markdup.log"
-	rm -f "${sortedBam}"
+	rm -f "${primaryBam}" "${nameSortedBam}" "${fixmateBam}" "${coordSortedBam}"
+	log_step_end "bbmap_map_and_markdup" "${step_t0}"
 
 fi
 
 # 5. Run de-novo assembly with plasmids_spades
 
 if [ ${skipSpadesDenovoAssembly} == 0 ]; then
+	step_t0=$(date +%s)
+	log_step_start "spades_assembly"
 	
 	# create output directory
 	spades_dir="${fastQ_f%_S[0-9]*}_SPADES_assembly"
@@ -345,10 +380,13 @@ if [ ${skipSpadesDenovoAssembly} == 0 ]; then
 		fi
 	fi
 
+	log_step_end "spades_assembly" "${step_t0}"
 fi
 
 # 6. Unicycler de novo assembly
 if [ "${runUnicycler}" == 1 ]; then
+	step_t0=$(date +%s)
+	log_step_start "unicycler_assembly"
 
 	# set output directory
 	unicycler_dir="${fastQ_f%_S[0-9]*}_unicycler_assembly"
@@ -368,6 +406,7 @@ if [ "${runUnicycler}" == 1 ]; then
 	mv "${unicycler_dir}/assembly.fasta" "${unicycler_dir}/${fastQ_f%_S[0-9]*}_unicycler_assembly.fasta"
 	mv "${unicycler_dir}/assembly.gfa" "${unicycler_dir}/${fastQ_f%_S[0-9]*}_unicycler_assembly.gfa"
 	mv "${unicycler_dir}/unicycler.log" "${unicycler_dir}/${unicycler_dir}.log"
+	log_step_end "unicycler_assembly" "${step_t0}"
 
 fi
 
@@ -377,6 +416,8 @@ fi
 # 6b. Annotate Unicycler assembly with pLannotate (longest contig only)
 # Runs only if Unicycler produced a non-empty assembly fasta AND if CONDA_ENV_PLANNOTATE is set/valid.
 if [[ "${runUnicycler}" == 1 ]]; then
+	step_t0=$(date +%s)
+	log_step_start "plannotate_unicycler"
 
 	base="${fastQ_f%_S[0-9]*}"
 	uni_dir="${base}_unicycler_assembly"
@@ -411,10 +452,13 @@ if [[ "${runUnicycler}" == 1 ]]; then
 	else
 		echo "[WARN] Unicycler assembly not found/empty ($uni_fa); skipping pLannotate for $base"
 	fi
+	log_step_end "plannotate_unicycler" "${step_t0}"
 fi
 
 # 7. Create consensus fasta
 if [ "${skipConsenus}" == "FALSE" ]; then
+	step_t0=$(date +%s)
+	log_step_start "consensus_call"
 	
 	bcftools mpileup -Ou -f ${fastaRef} "${fastQ_f%_S[0-9]*}.bam" |\
 	bcftools call -mv -Oz -o "${fastaRef/.fa/.vcf.gz}"
@@ -428,10 +472,13 @@ if [ "${skipConsenus}" == "FALSE" ]; then
 		mv ${fastaRef/.fa/_consensus.fa} "${uniqueID}_${fastaRef/.fa/_consensus.fa}"
 
 	fi
+	log_step_end "consensus_call" "${step_t0}"
 fi
 
 # 7b. Optional: call variants with VarScan (per sample)
 if [[ "${ENABLE_VARIANTS:-0}" == "1" ]]; then
+	step_t0=$(date +%s)
+	log_step_start "variants_varscan_snpeff"
 	varscan_log="${sampleBase}_varscan.log"
 	finalBam="${sampleBase}.bam"
 
@@ -546,8 +593,9 @@ if [[ "${ENABLE_VARIANTS:-0}" == "1" ]]; then
 			echo -e "sample\tvarscan_snps\tvarscan_indels\tvarscan_total\tsnpeff_status\tsnpeff_vcf"
 			echo -e "${sampleBase}\t${snp_count}\t${indel_count}\t${merged_count}\t${snpeff_status}\t${snpeff_vcf}"
 		} > "${variant_summary}"
-		echo "[variants] wrote ${variant_summary}" | tee -a "${varscan_log}"
-	fi
+			echo "[variants] wrote ${variant_summary}" | tee -a "${varscan_log}"
+		fi
+	log_step_end "variants_varscan_snpeff" "${step_t0}"
 fi
 
 
@@ -555,6 +603,8 @@ fi
 # Only works if fasta reference was provided
 
 if [ "${assembleUnmappedReads}" == "TRUE" ]; then
+	step_t0=$(date +%s)
+	log_step_start "unmapped_unicycler"
 
 	# create directory for unmapped files
 	unmapped_reads_dir="${fastQ_f%_S[0-9]*}_unmapped_reads"
@@ -591,11 +641,15 @@ if [ "${assembleUnmappedReads}" == "TRUE" ]; then
 	${unmapped_reads_dir}
 
 
+	log_step_end "unmapped_unicycler" "${step_t0}"
 fi
 
 # 9. Cleanup
-
+step_t0=$(date +%s)
+log_step_start "final_cleanup"
 pigz -p 12 "${fastQ_f%_S[0-9]*}_R1_trimmed.fastq" "${fastQ_r%_S[0-9]*}_R2_trimmed.fastq"
 find . -name "*.sam" -delete
 find . -name "0" -delete
 #rm $fastQ_f $fastQ_r
+log_step_end "final_cleanup" "${step_t0}"
+echo "[timing] sample=${sampleBase} status=end elapsed_s=$(( $(date +%s) - pipeline_t0 )) ts=$(timestamp_now)"
