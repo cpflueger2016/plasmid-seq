@@ -6,12 +6,16 @@ set -euo pipefail
 DEFAULT_TSV=""
 DEFAULT_REFS=""
 MAX_CONCURRENT=""
+MAP_CPUS=""
+PLASMIDSEQ_VERSION="1.0"
 log_file="" 
 plasmidSeqData=""
 tsv=""
 refs=""
 PLASMIDSEQ_CONFIG=""
 PLATE_MAP_CSV=""
+CLI_ENABLE_VARIANTS=""
+CLI_ENABLE_SNPEFF=""
 
 
 usage() {
@@ -26,28 +30,41 @@ Optional:
   -t <file>  PL_to_fasta.tsv path (default: ${DEFAULT_TSV})
   -f <dir>   Fasta reference folder path (default: ${DEFAULT_REFS})
   -p <int>   Max concurrent array tasks (default: ${MAX_CONCURRENT})
+  -J <int>   CPUs per mapper array task (default: ${MAP_CPUS})
   -c <file>  Config file path (default precedence: local config, then plasmidseq.config)
   -w <file>  Plate map CSV for run summary (columns: PLid,plate,position)
   -l <file>  Submit log file (default: <plasmidSeqData>/plasmidseq_submit_<date>.log)
+  -v         Print version and exit
+  -V         Enable VarScan variant calling (overrides config)
+  -N         Disable VarScan variant calling (overrides config)
+  -E         Enable snpEff annotation (overrides config; implies variants on)
+  -S         Disable snpEff annotation (overrides config)
 
 Example:
   $(basename "$0") -d /home/.../fastqs
   $(basename "$0") -d /home/.../fastqs -t ./PL_to_fasta.tsv -f ./Fasta_Reference_Files -p 80
   $(basename "$0") -d /home/.../fastqs -c ./plasmidseq.local.config -l ./submit.log
   $(basename "$0") -d /home/.../fastqs -w /group/llshared/PlasmidSeq/PL_to_plate_position.csv
+  $(basename "$0") -d /home/.../fastqs -V -E
 EOF
 }
 
 
-while getopts ":d:t:f:p:l:c:w:h" opt; do
+while getopts ":d:t:f:p:J:l:c:w:vVNESh" opt; do
   case "$opt" in
     d) plasmidSeqData="$OPTARG" ;;
     t) tsv="$OPTARG" ;;
     f) refs="$OPTARG" ;;
     p) MAX_CONCURRENT="$OPTARG" ;;
+    J) MAP_CPUS="$OPTARG" ;;
     c) PLASMIDSEQ_CONFIG="$OPTARG" ;;
     w) PLATE_MAP_CSV="$OPTARG" ;;
     l) log_file="$OPTARG" ;;
+    v) echo "plasmid-seq version ${PLASMIDSEQ_VERSION}"; exit 0 ;;
+    V) CLI_ENABLE_VARIANTS="1" ;;
+    N) CLI_ENABLE_VARIANTS="0" ;;
+    E) CLI_ENABLE_SNPEFF="1" ;;
+    S) CLI_ENABLE_SNPEFF="0" ;;
     h) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
@@ -109,8 +126,27 @@ load_config
 tsv="${tsv:-${DEFAULT_TSV}}"
 refs="${refs:-${DEFAULT_REFS}}"
 MAX_CONCURRENT="${MAX_CONCURRENT:-${MAX_CONCURRENT_DEFAULT:-50}}"
+MAP_CPUS="${MAP_CPUS:-${MAP_CPUS_DEFAULT:-4}}"
 RESULTS_BASE="${RESULTS_BASE:-/group/llshared/PlasmidSeq/Results}"
 MAX_ARRAY_SIZE="${MAX_ARRAY_SIZE:-1001}"
+
+# CLI flags override config defaults.
+if [[ -n "${CLI_ENABLE_VARIANTS}" ]]; then
+  ENABLE_VARIANTS="${CLI_ENABLE_VARIANTS}"
+fi
+if [[ -n "${CLI_ENABLE_SNPEFF}" ]]; then
+  ENABLE_SNPEFF="${CLI_ENABLE_SNPEFF}"
+fi
+# snpEff requires variant calling output; auto-enable unless user explicitly forced off.
+if [[ "${ENABLE_SNPEFF:-0}" == "1" && "${ENABLE_VARIANTS:-0}" != "1" ]]; then
+  if [[ "${CLI_ENABLE_VARIANTS:-}" == "0" ]]; then
+    echo "[submit][ERROR] Conflicting options: snpEff enabled (-E) but variants disabled (-N)." >&2
+    exit 2
+  fi
+  ENABLE_VARIANTS="1"
+  echo "[submit] enabling variants because snpEff is enabled"
+fi
+export ENABLE_VARIANTS ENABLE_SNPEFF
 
 if [[ ! -f "$tsv" ]]; then
   echo "[submit][ERROR] TSV not found: $tsv" >&2
@@ -135,11 +171,15 @@ echo "[submit] logging to: $log_file"
 
 
 echo "[submit] jobdate=$jobdate"
+echo "[submit] version=${PLASMIDSEQ_VERSION}"
 echo "[submit] plasmidSeqData=$plasmidSeqData"
 echo "[submit] TSV=$tsv"
 echo "[submit] REFS=$refs"
 echo "[submit] PLATE_MAP_CSV=${PLATE_MAP_CSV:-<none>}"
 echo "[submit] max_concurrent=$MAX_CONCURRENT"
+echo "[submit] map_cpus=$MAP_CPUS"
+echo "[submit] ENABLE_VARIANTS=${ENABLE_VARIANTS:-0}"
+echo "[submit] ENABLE_SNPEFF=${ENABLE_SNPEFF:-0}"
 
 # 1) Submit prep job (writes jobs.tsv into scratch)
 prep_jobid=$(sbatch --parsable \
@@ -153,6 +193,14 @@ echo "[submit] prep job: $prep_jobid"
 SCRATCH="${MYSCRATCH}/${jobname}/${prep_jobid}"
 RESULTS="${RESULTS_BASE}/${jobname}/${prep_jobid}"
 
+# If snpEff is enabled, pass run-specific DB config/data paths to mapping jobs.
+if [[ "${ENABLE_SNPEFF:-0}" == "1" ]]; then
+  SNPEFF_DB="${SNPEFF_DB:-plasmidseq_${prep_jobid}}"
+  SNPEFF_DATA_DIR="${SNPEFF_DATA_DIR:-${SCRATCH}/snpEff_data}"
+  SNPEFF_CONFIG_FILE="${SNPEFF_CONFIG_FILE:-${SCRATCH}/snpEff.config}"
+  export SNPEFF_DB SNPEFF_DATA_DIR SNPEFF_CONFIG_FILE
+fi
+
 # best effort: keep a copy of the submit log alongside the run in scratch
 # (gather can then copy it into RESULTS automatically)
 mkdir -p "${SCRATCH}" 2>/dev/null || true
@@ -161,6 +209,9 @@ cp -f "$log_file" "${SCRATCH}/plasmidseq_submit.log" 2>/dev/null || true
 
 echo "[submit] expected SCRATCH=$SCRATCH"
 echo "[submit] expected RESULTS=$RESULTS"
+if [[ "${ENABLE_SNPEFF:-0}" == "1" ]]; then
+  echo "[submit] snpEff enabled: db=${SNPEFF_DB} config=${SNPEFF_CONFIG_FILE} dataDir=${SNPEFF_DATA_DIR}"
+fi
 
 # 2) Wait for jobs.tsv to appear (prep must finish staging and writing it)
 jobs_file="${SCRATCH}/jobs.tsv"
@@ -214,6 +265,7 @@ while [[ $offset -lt $n_jobs ]]; do
 
   array_jobid=$(sbatch --parsable \
     --dependency=afterok:"$prep_jobid" \
+    --cpus-per-task="${MAP_CPUS}" \
     --array=0-${last_index}%${MAX_CONCURRENT} \
     --output="$SCRATCH/Logs/slurm-%A_%a.out" \
     --error="$SCRATCH/Logs/slurm-%A_%a.out" \

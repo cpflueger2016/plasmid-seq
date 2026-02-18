@@ -292,7 +292,7 @@ There are multiple logging layers:
 
 Generate a per-run summary table + report page with:
 - total reads per sample (from `*_fastp_report.json`)
-- mapping rate (from `*_bowtie2.log`, when present)
+- mapping rate (from `*_bbmap.log`, with Bowtie2 logs still supported for legacy runs)
 - reference/plannotate status flags
 - bar graph of reads per sample
 - 96-well plate issue view (using `PL_to_plate_position.csv`)
@@ -317,6 +317,17 @@ Automatic mode:
 - pass `-w /path/to/PL_to_plate_position.csv` to `plasmidseq_submit.sh`
 - gather will run `plasmidseq_run_summary.py` before copying to `Aligned`
 - summary files are copied to `Aligned` with the rest of run results
+
+Per-sample report mode (automatic in gather):
+- gather runs `plasmidseq_sample_report.py` for each sample folder with fastp output
+- outputs per sample:
+  - `<sample>_sample_report.json`
+  - `<sample>_sample_report.html`
+  - `<sample>_sample_report_coverage_tracks.tsv`
+- report compares:
+  - deduplicated BBMap depth over reference
+  - Unicycler assembly mapped back to reference depth
+  - includes traffic-light status + QC metrics (reads, mapping, duplicates, coverage)
 
 ---
 

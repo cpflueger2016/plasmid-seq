@@ -1,7 +1,7 @@
 #!/bin/bash
 
-### Maps a plasmid against bowtie2 reference as well as de novo assembles fastq file
-### requires: fastp, bowtie2, sambamba, SPAdes, samtools, seqkit, pigz, bcftools, tabix, unicycler, pilon, java
+### Maps a plasmid against a BBMap reference (circular-aware) as well as de novo assembles fastq file
+### requires: fastp, bbmap, SPAdes, samtools, seqkit, pigz, bcftools, tabix, unicycler, pilon, java
 ### version 0.8.2
 
 version="0.8.2"
@@ -13,6 +13,9 @@ cleanSPADES=1
 minLengthSPADES=0
 uniqueID=""
 runUnicycler=0
+threads="${THREADS:-${SLURM_CPUS_PER_TASK:-4}}"
+scriptDir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+fastaCleaner="${scriptDir}/plasmidseq_clean_fasta_headers.sh"
 
 ### Check dependencies
 
@@ -21,17 +24,17 @@ if ! [ -x "$(command -v fastp)" ]; then
   exit 1
 fi
 
-if ! [ -x "$(command -v bowtie2-align-s)" ]; then
-  echo 'Error: bowtie2-align-s is not installed. Try installing with "conda install -c bioconda bowtie2' >&2
+if ! [ -x "$(command -v bbmap.sh)" ]; then
+  echo 'Error: bbmap.sh is not installed. Try installing with "conda install -c bioconda bbmap' >&2
   exit 1
 fi
 
-if ! [ -x "$(command -v sambamba)" ]; then
-  echo 'Error: sambamba is not installed. Try installing with "conda install -c bioconda sambamba' >&2
-  exit 1
-fi
 if ! [ -x "$(command -v pigz)" ]; then
   echo 'Error: pigz is not installed. Try installing with "conda install pigz' >&2
+  exit 1
+fi
+if ! [ -x "$(command -v samtools)" ]; then
+  echo 'Error: samtools is not installed. Try installing with "conda install -c bioconda samtools' >&2
   exit 1
 fi
 if ! [ -x "$(command -v bcftools)" ]; then
@@ -71,9 +74,10 @@ OPTIONS:
     -h    Show this message
     -1    <file_r1.fastq> Fastq file, paired end read 1, gzipped is ok.
     -2    <file_r2.fastq> Fastq file, paired end read 2, gzipped is ok.
-    -r    <ref.fa> Fasta reference file for mapping with bowtie2. Optional. Must end in *.fa !
+    -r    <ref.fa> Fasta reference file for mapping with BBMap. Optional. Must end in *.fa !
     -s    skip SPADES plasmid de-novo assembly
     -q    quality score for trimming, default = 20
+    -n    number of threads to use (default: \$THREADS, then \$SLURM_CPUS_PER_TASK, else 4)
     -c    clean up SPADES assembly directory and only save simplified_contigs that contain sequences, default = FALSE	
     -m    minimum length of SPADES assembly to be filtered out, default = Disabled
     -u    unique ID to prepend file names with and fasta entries of SPADES nodes
@@ -98,7 +102,7 @@ EOF
 }
 
 #parse the options
-while getopts "1:2:r:q:m:u:syckz" o; do
+while getopts "1:2:r:q:n:m:u:syckz" o; do
     case "${o}" in
         1)
             fastQ_f=${OPTARG}
@@ -117,6 +121,9 @@ while getopts "1:2:r:q:m:u:syckz" o; do
             ;;
         q)
             qval=${OPTARG}
+            ;;
+        n)
+            threads=${OPTARG}
             ;;
         m)
             minLengthSPADES=${OPTARG}
@@ -155,6 +162,7 @@ echo "fastaRef: $fastaRef"
 echo "skipSpadesDenovoAssembly: $skipSpadesDenovoAssembly"
 echo "cleanSPADES: $cleanSPADES"
 echo "qval: $qval"
+echo "threads: $threads"
 echo "minLengthSPADES: $minLengthSPADES"
 echo "uniqueID: $uniqueID"
 echo "runUnicycler: $runUnicycler"
@@ -195,53 +203,117 @@ else
 	skipping="FALSE"
 fi
 
+if ! [[ "${threads}" =~ ^[0-9]+$ ]] || [[ "${threads}" -lt 1 ]]; then
+  echo "Invalid thread count: '${threads}'. Must be a positive integer." >&2
+  exit 1
+fi
+
 fastaRefFile=${fastaRef}
-bowtieIndex=${fastaRefFile%.fa*}
+sampleBase="${fastQ_f%_S[0-9]*}"
+
+timestamp_now() {
+	date +%Y-%m-%dT%H:%M:%S%z
+}
+
+log_step_start() {
+	local step="$1"
+	echo "[timing] step=${step} status=start ts=$(timestamp_now)"
+}
+
+log_step_end() {
+	local step="$1"
+	local start_s="$2"
+	local end_s
+	end_s=$(date +%s)
+	echo "[timing] step=${step} status=end elapsed_s=$((end_s - start_s)) ts=$(timestamp_now)"
+}
+
+pipeline_t0=$(date +%s)
+echo "[timing] sample=${sampleBase} status=start ts=$(timestamp_now)"
 
 
 # 1. Trim Reads (Nextera Adapters)
-
-fastp -w 4 -q ${qval} \
-	  -i ${fastQ_f} \
-	  -I ${fastQ_r} \
-	  -o "${fastQ_f%_S[0-9]*}_R1_trimmed.fastq" \
-	  -O "${fastQ_r%_S[0-9]*}_R2_trimmed.fastq" \
-	  -h "${fastQ_f%_S[0-9]*}_fastp_report.html" \
-	  -j "${fastQ_f%_S[0-9]*}_fastp_report.json" \
-	  -R "${fastQ_f%_S[0-9]*}_fastp_report" \
+step_t0=$(date +%s)
+log_step_start "fastp_trim"
+fastp -w "${threads}" -q ${qval} \
+		  -i ${fastQ_f} \
+		  -I ${fastQ_r} \
+		  -o "${sampleBase}_R1_trimmed.fastq" \
+		  -O "${sampleBase}_R2_trimmed.fastq" \
+		  -h "${sampleBase}_fastp_report.html" \
+		  -j "${sampleBase}_fastp_report.json" \
+		  -R "${sampleBase}_fastp_report" \
 	  --adapter_sequence CTGTCTCTTATACAC \
 	  --adapter_sequence_r2 TGTATAAGAGACAG \
 	  -x -y
+log_step_end "fastp_trim" "${step_t0}"
 
 
 
 ### Reference mapping if fasta reference file was provided
 
 if [ "${skipping}" == "FALSE" ]; then
-	# 2. Build Bowtie2 Index
+	# 2. Clean FASTA headers for robust mapping compatibility
+	step_t0=$(date +%s)
+	log_step_start "fasta_header_clean"
+	if [[ "${fastaRefFile}" == *_clean.fa || "${fastaRefFile}" == *_clean.fasta ]]; then
+		cleanFastaRef="${fastaRefFile}"
+	else
+		if [[ ! -x "${fastaCleaner}" ]]; then
+			echo "Error: FASTA header cleaner script not found/executable: ${fastaCleaner}" >&2
+			exit 1
+		fi
+		cleanFastaRef="${fastaRefFile%.*}_clean.fa"
+		"${fastaCleaner}" -i "${fastaRefFile}" -o "${cleanFastaRef}" \
+			> "${sampleBase}_fasta_header_cleanup.log" 2>&1
+	fi
+	fastaRef="${cleanFastaRef}"
+	log_step_end "fasta_header_clean" "${step_t0}"
 
-	bowtie2-build -f ${fastaRef} ${bowtieIndex} &> "${fastQ_f%_S[0-9]*}_bt2_index.log"
+	# 3. BBMap reference mapping (circular-aware via usemodulo)
+	step_t0=$(date +%s)
+	log_step_start "bbmap_map_and_markdup"
 
-	# 3. Bowtie2 map against index
-
-	bowtie2-align-s -x ${bowtieIndex} \
-					--very-sensitive  \
-					-1 "${fastQ_f%_S[0-9]*}_R1_trimmed.fastq" \
-					-2 "${fastQ_r%_S[0-9]*}_R2_trimmed.fastq" \
-					-S "${fastQ_f%_S[0-9]*}.sam" &> "${fastQ_f%_S[0-9]*}_bowtie2.log"
-	echo
-	cat "${fastQ_f%_S[0-9]*}_bowtie2.log"
+		bbmap.sh ref=${fastaRef} \
+					in="${sampleBase}_R1_trimmed.fastq" \
+					in2="${sampleBase}_R2_trimmed.fastq" \
+					out="${sampleBase}.sam" \
+					usemodulo=t \
+					nodisk=t \
+					threads="${threads}" \
+					overwrite=t &> "${sampleBase}_bbmap.log"
+		echo
+		cat "${sampleBase}_bbmap.log"
 				
-	# 4. Sam to Bam conversion, filtering and removal of multimapper
+		# 4. Sam to Bam conversion and duplicate marking
+		baseOut="${sampleBase}"
+		primaryBam="${baseOut}.primary.bam"
+		nameSortedBam="${baseOut}.namesorted.bam"
+		fixmateBam="${baseOut}.fixmate.bam"
+		coordSortedBam="${baseOut}.coordsorted.bam"
+		finalBam="${baseOut}.bam"
 
-	sambamba view -q -F "not(secondary_alignment)" -S -f bam "${fastQ_f%_S[0-9]*}.sam" |\
-	sambamba sort -q /dev/stdin -o "${fastQ_f%_S[0-9]*}.bam"
+	# Drop secondary alignments (samtools flag 0x100) prior to markdup.
+	samtools view -@ "${threads}" -F 256 -b "${baseOut}.sam" > "${primaryBam}"
+	samtools sort -@ "${threads}" -n -o "${nameSortedBam}" "${primaryBam}"
+	samtools fixmate -@ "${threads}" -m "${nameSortedBam}" "${fixmateBam}"
+	samtools sort -@ "${threads}" -o "${coordSortedBam}" "${fixmateBam}"
+	samtools markdup -@ "${threads}" "${coordSortedBam}" "${finalBam}" \
+		> "${baseOut}_markdup.log" 2>&1
+
+	samtools index -@ "${threads}" "${finalBam}"
+	echo
+	cat "${baseOut}_markdup.log"
+	rm -f "${primaryBam}" "${nameSortedBam}" "${fixmateBam}" "${coordSortedBam}"
+	log_step_end "bbmap_map_and_markdup" "${step_t0}"
 
 fi
 
 # 5. Run de-novo assembly with plasmids_spades
 
 if [ ${skipSpadesDenovoAssembly} == 0 ]; then
+	step_t0=$(date +%s)
+	log_step_start "spades_assembly"
 	
 	# create output directory
 	spades_dir="${fastQ_f%_S[0-9]*}_SPADES_assembly"
@@ -308,10 +380,13 @@ if [ ${skipSpadesDenovoAssembly} == 0 ]; then
 		fi
 	fi
 
+	log_step_end "spades_assembly" "${step_t0}"
 fi
 
 # 6. Unicycler de novo assembly
 if [ "${runUnicycler}" == 1 ]; then
+	step_t0=$(date +%s)
+	log_step_start "unicycler_assembly"
 
 	# set output directory
 	unicycler_dir="${fastQ_f%_S[0-9]*}_unicycler_assembly"
@@ -331,6 +406,7 @@ if [ "${runUnicycler}" == 1 ]; then
 	mv "${unicycler_dir}/assembly.fasta" "${unicycler_dir}/${fastQ_f%_S[0-9]*}_unicycler_assembly.fasta"
 	mv "${unicycler_dir}/assembly.gfa" "${unicycler_dir}/${fastQ_f%_S[0-9]*}_unicycler_assembly.gfa"
 	mv "${unicycler_dir}/unicycler.log" "${unicycler_dir}/${unicycler_dir}.log"
+	log_step_end "unicycler_assembly" "${step_t0}"
 
 fi
 
@@ -340,6 +416,8 @@ fi
 # 6b. Annotate Unicycler assembly with pLannotate (longest contig only)
 # Runs only if Unicycler produced a non-empty assembly fasta AND if CONDA_ENV_PLANNOTATE is set/valid.
 if [[ "${runUnicycler}" == 1 ]]; then
+	step_t0=$(date +%s)
+	log_step_start "plannotate_unicycler"
 
 	base="${fastQ_f%_S[0-9]*}"
 	uni_dir="${base}_unicycler_assembly"
@@ -374,10 +452,13 @@ if [[ "${runUnicycler}" == 1 ]]; then
 	else
 		echo "[WARN] Unicycler assembly not found/empty ($uni_fa); skipping pLannotate for $base"
 	fi
+	log_step_end "plannotate_unicycler" "${step_t0}"
 fi
 
 # 7. Create consensus fasta
 if [ "${skipConsenus}" == "FALSE" ]; then
+	step_t0=$(date +%s)
+	log_step_start "consensus_call"
 	
 	bcftools mpileup -Ou -f ${fastaRef} "${fastQ_f%_S[0-9]*}.bam" |\
 	bcftools call -mv -Oz -o "${fastaRef/.fa/.vcf.gz}"
@@ -391,6 +472,130 @@ if [ "${skipConsenus}" == "FALSE" ]; then
 		mv ${fastaRef/.fa/_consensus.fa} "${uniqueID}_${fastaRef/.fa/_consensus.fa}"
 
 	fi
+	log_step_end "consensus_call" "${step_t0}"
+fi
+
+# 7b. Optional: call variants with VarScan (per sample)
+if [[ "${ENABLE_VARIANTS:-0}" == "1" ]]; then
+	step_t0=$(date +%s)
+	log_step_start "variants_varscan_snpeff"
+	varscan_log="${sampleBase}_varscan.log"
+	finalBam="${sampleBase}.bam"
+
+	if [[ "${skipping}" == "TRUE" ]]; then
+		echo "[WARN] ENABLE_VARIANTS=1 but reference mapping was skipped; not running VarScan." | tee -a "${varscan_log}"
+	elif [[ ! -f "${finalBam}" ]]; then
+		echo "[WARN] ENABLE_VARIANTS=1 but BAM not found (${finalBam}); not running VarScan." | tee -a "${varscan_log}"
+	else
+		mpileup_file="${sampleBase}.mpileup"
+		snps_vcf="${sampleBase}_varscan_snps.vcf"
+		indels_vcf="${sampleBase}_varscan_indels.vcf"
+		merged_vcf="${sampleBase}_varscan_merged.vcf"
+		snpeff_vcf="${sampleBase}_varscan_snpeff.vcf"
+		variant_summary="${sampleBase}_varscan_summary.tsv"
+
+		min_cov="${VARSCAN_MIN_COVERAGE:-10}"
+		min_var_freq="${VARSCAN_MIN_VAR_FREQ:-0.01}"
+		pval="${VARSCAN_PVALUE:-0.05}"
+
+		echo "[variants] generating mpileup for ${sampleBase}" | tee -a "${varscan_log}"
+		samtools mpileup -f "${fastaRef}" "${finalBam}" > "${mpileup_file}" 2>> "${varscan_log}"
+
+		if [[ -n "${VARSCAN_JAR:-}" && -f "${VARSCAN_JAR}" ]]; then
+			echo "[variants] using VarScan jar: ${VARSCAN_JAR}" | tee -a "${varscan_log}"
+			java -jar "${VARSCAN_JAR}" mpileup2snp "${mpileup_file}" \
+				--min-coverage "${min_cov}" \
+				--min-var-freq "${min_var_freq}" \
+				--p-value "${pval}" \
+				--output-vcf 1 > "${snps_vcf}" 2>> "${varscan_log}"
+			java -jar "${VARSCAN_JAR}" mpileup2indel "${mpileup_file}" \
+				--min-coverage "${min_cov}" \
+				--min-var-freq "${min_var_freq}" \
+				--p-value "${pval}" \
+				--output-vcf 1 > "${indels_vcf}" 2>> "${varscan_log}"
+		elif command -v "${VARSCAN_BIN:-varscan}" >/dev/null 2>&1; then
+			echo "[variants] using VarScan binary: ${VARSCAN_BIN:-varscan}" | tee -a "${varscan_log}"
+			"${VARSCAN_BIN:-varscan}" mpileup2snp "${mpileup_file}" \
+				--min-coverage "${min_cov}" \
+				--min-var-freq "${min_var_freq}" \
+				--p-value "${pval}" \
+				--output-vcf 1 > "${snps_vcf}" 2>> "${varscan_log}"
+			"${VARSCAN_BIN:-varscan}" mpileup2indel "${mpileup_file}" \
+				--min-coverage "${min_cov}" \
+				--min-var-freq "${min_var_freq}" \
+				--p-value "${pval}" \
+				--output-vcf 1 > "${indels_vcf}" 2>> "${varscan_log}"
+		else
+			echo "[WARN] ENABLE_VARIANTS=1 but VarScan not found (set VARSCAN_BIN or VARSCAN_JAR)." | tee -a "${varscan_log}"
+		fi
+
+		if [[ -s "${snps_vcf}" || -s "${indels_vcf}" ]]; then
+			if [[ -s "${snps_vcf}" ]]; then
+				cp -f "${snps_vcf}" "${merged_vcf}"
+				if [[ -s "${indels_vcf}" ]]; then
+					grep -v '^#' "${indels_vcf}" >> "${merged_vcf}" || true
+				fi
+			else
+				cp -f "${indels_vcf}" "${merged_vcf}"
+			fi
+			echo "[variants] wrote ${snps_vcf}, ${indels_vcf}, ${merged_vcf}" | tee -a "${varscan_log}"
+		fi
+
+		snpeff_status="skipped"
+		if [[ "${ENABLE_SNPEFF:-0}" == "1" ]]; then
+			if [[ ! -s "${merged_vcf}" ]]; then
+				echo "[WARN] ENABLE_SNPEFF=1 but merged VCF missing; skipping snpEff." | tee -a "${varscan_log}"
+				snpeff_status="missing_input"
+			elif [[ -z "${SNPEFF_DB:-}" ]]; then
+				echo "[WARN] ENABLE_SNPEFF=1 but SNPEFF_DB is empty; skipping snpEff." | tee -a "${varscan_log}"
+				snpeff_status="missing_db"
+				elif command -v "${SNPEFF_BIN:-snpEff}" >/dev/null 2>&1; then
+					echo "[variants] running snpEff (${SNPEFF_BIN:-snpEff} ${SNPEFF_DB}) on ${merged_vcf}" | tee -a "${varscan_log}"
+					snpeff_cmd=("${SNPEFF_BIN:-snpEff}")
+					snpeff_env=()
+					if [[ -n "${SNPEFF_JAVA_HOME:-}" && -x "${SNPEFF_JAVA_HOME}/bin/java" ]]; then
+						echo "[variants] using snpEff JAVA_HOME=${SNPEFF_JAVA_HOME}" | tee -a "${varscan_log}"
+						snpeff_env=(env "JAVA_HOME=${SNPEFF_JAVA_HOME}" "PATH=${SNPEFF_JAVA_HOME}/bin:${PATH}")
+					fi
+					if [[ -n "${SNPEFF_CONFIG_FILE:-}" ]]; then
+						snpeff_cmd+=("-c" "${SNPEFF_CONFIG_FILE}")
+					fi
+					if [[ -n "${SNPEFF_DATA_DIR:-}" ]]; then
+						snpeff_cmd+=("-dataDir" "${SNPEFF_DATA_DIR}")
+					fi
+					snpeff_cmd+=("${SNPEFF_DB}" "${merged_vcf}")
+					if "${snpeff_env[@]}" "${snpeff_cmd[@]}" > "${snpeff_vcf}" 2>> "${varscan_log}"; then
+						snpeff_status="ok"
+					else
+						echo "[WARN] snpEff failed for ${sampleBase}; see ${varscan_log}" | tee -a "${varscan_log}"
+					rm -f "${snpeff_vcf}" || true
+					snpeff_status="failed"
+				fi
+			else
+				echo "[WARN] ENABLE_SNPEFF=1 but snpEff binary not found: ${SNPEFF_BIN:-snpEff}" | tee -a "${varscan_log}"
+				snpeff_status="binary_missing"
+			fi
+		fi
+
+		snp_count=0
+		indel_count=0
+		merged_count=0
+		if [[ -s "${snps_vcf}" ]]; then
+			snp_count=$(grep -vc '^#' "${snps_vcf}" || true)
+		fi
+		if [[ -s "${indels_vcf}" ]]; then
+			indel_count=$(grep -vc '^#' "${indels_vcf}" || true)
+		fi
+		if [[ -s "${merged_vcf}" ]]; then
+			merged_count=$(grep -vc '^#' "${merged_vcf}" || true)
+		fi
+		{
+			echo -e "sample\tvarscan_snps\tvarscan_indels\tvarscan_total\tsnpeff_status\tsnpeff_vcf"
+			echo -e "${sampleBase}\t${snp_count}\t${indel_count}\t${merged_count}\t${snpeff_status}\t${snpeff_vcf}"
+		} > "${variant_summary}"
+			echo "[variants] wrote ${variant_summary}" | tee -a "${varscan_log}"
+		fi
+	log_step_end "variants_varscan_snpeff" "${step_t0}"
 fi
 
 
@@ -398,16 +603,18 @@ fi
 # Only works if fasta reference was provided
 
 if [ "${assembleUnmappedReads}" == "TRUE" ]; then
+	step_t0=$(date +%s)
+	log_step_start "unmapped_unicycler"
 
 	# create directory for unmapped files
 	unmapped_reads_dir="${fastQ_f%_S[0-9]*}_unmapped_reads"
 	mkdir ${unmapped_reads_dir}
 
 	# extract unmapped reads from bam file
-	samtools view -@ 2 -f4 -bh "${fastQ_f%_S[0-9]*}.bam" > "${fastQ_f%_S[0-9]*}.unmapped.bam"
+	samtools view -@ "${threads}" -f4 -bh "${fastQ_f%_S[0-9]*}.bam" > "${fastQ_f%_S[0-9]*}.unmapped.bam"
 
 	# convert unmapped bam to fastq files
-	samtools fastq -@ 2 "${fastQ_f%_S[0-9]*}.unmapped.bam" \
+	samtools fastq -@ "${threads}" "${fastQ_f%_S[0-9]*}.unmapped.bam" \
 	-1 "${fastQ_f%_S[0-9]*}.unmapped.R1.fastq.gz" \
 	-2 "${fastQ_f%_S[0-9]*}.unmapped.R2.fastq.gz" \
 	-0 /dev/null -s /dev/null -n
@@ -434,13 +641,15 @@ if [ "${assembleUnmappedReads}" == "TRUE" ]; then
 	${unmapped_reads_dir}
 
 
+	log_step_end "unmapped_unicycler" "${step_t0}"
 fi
 
 # 9. Cleanup
-
+step_t0=$(date +%s)
+log_step_start "final_cleanup"
 pigz -p 12 "${fastQ_f%_S[0-9]*}_R1_trimmed.fastq" "${fastQ_r%_S[0-9]*}_R2_trimmed.fastq"
 find . -name "*.sam" -delete
-find . -name "*.bt2" -delete
 find . -name "0" -delete
 #rm $fastQ_f $fastQ_r
-
+log_step_end "final_cleanup" "${step_t0}"
+echo "[timing] sample=${sampleBase} status=end elapsed_s=$(( $(date +%s) - pipeline_t0 )) ts=$(timestamp_now)"

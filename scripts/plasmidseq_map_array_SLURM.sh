@@ -1,7 +1,7 @@
 #!/bin/bash --login
 #SBATCH --job-name=plasmidSeq_map
 #SBATCH --partition=work
-#SBATCH --mem-per-cpu=4G
+#SBATCH --mem-per-cpu=8G
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -50,6 +50,11 @@ fi
 
 # Mapper runs in a child bash process, so export config vars it consumes.
 export CONDA_ENV CONDA_ENV_PLANNOTATE CONDA_INIT MODULES
+export ENABLE_VARIANTS VARSCAN_BIN VARSCAN_JAR VARSCAN_MIN_COVERAGE VARSCAN_MIN_VAR_FREQ VARSCAN_PVALUE
+export ENABLE_SNPEFF SNPEFF_BIN SNPEFF_DB SNPEFF_ENV_PREFIX SNPEFF_JAVA_HOME
+export SNPEFF_CONFIG_FILE SNPEFF_DATA_DIR
+THREADS="${THREADS:-${SLURM_CPUS_PER_TASK:-4}}"
+export THREADS
 
 # --- Environment ---
 if command -v module >/dev/null 2>&1 && [[ -n "${MODULES:-}" ]]; then
@@ -85,6 +90,7 @@ if [[ -z "${folder:-}" || -z "${uid:-}" ]]; then
 fi
 
 echo "[map] task=$SLURM_ARRAY_TASK_ID line=$line_num uid=$uid folder=$folder ref=$ref"
+echo "[map] threads=${THREADS}"
 cd "$SCRATCH/$folder"
 
 bash "$MAPPER" \

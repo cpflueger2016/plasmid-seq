@@ -9,6 +9,8 @@ import argparse
 import csv
 import html
 import json
+import os
+import subprocess
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -16,7 +18,8 @@ from typing import Dict, List, Optional, Tuple
 
 
 PL_RE = re.compile(r"(PL\d{4,})")
-OVERALL_ALIGN_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)% overall alignment rate")
+BOWTIE2_OVERALL_ALIGN_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)% overall alignment rate")
+BBMAP_MAPPED_PCT_RE = re.compile(r"(?im)^\s*mapped:\s*.*?([0-9]+(?:\.[0-9]+)?)%")
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,6 +49,11 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=80.0,
         help="Warn when overall mapping percent is below this value (default: 80).",
+    )
+    parser.add_argument(
+        "--version",
+        default=None,
+        help="Pipeline version string (optional; overrides PLASMIDSEQ_VERSION env var).",
     )
     return parser.parse_args()
 
@@ -140,18 +148,28 @@ def parse_fastp_json(sample_dir: Path) -> Dict[str, Optional[float]]:
     return result
 
 
-def parse_bowtie_log(sample_dir: Path) -> Dict[str, Optional[float]]:
+def parse_mapping_log(sample_dir: Path) -> Dict[str, Optional[float]]:
     result = {
-        "bowtie2_overall_alignment_pct": None,
+        "mapping_tool": None,
+        "overall_alignment_pct": None,
     }
-    files = sorted(sample_dir.glob("*_bowtie2.log"))
-    if not files:
-        return result
+    bbmap_files = sorted(sample_dir.glob("*_bbmap.log"))
+    if bbmap_files:
+        text = bbmap_files[0].read_text(encoding="utf-8", errors="ignore")
+        match = BBMAP_MAPPED_PCT_RE.search(text)
+        if match:
+            result["mapping_tool"] = "bbmap"
+            result["overall_alignment_pct"] = float(match.group(1))
+            return result
 
-    text = files[0].read_text(encoding="utf-8", errors="ignore")
-    match = OVERALL_ALIGN_RE.search(text)
-    if match:
-        result["bowtie2_overall_alignment_pct"] = float(match.group(1))
+    # Backward compatibility for prior runs.
+    bowtie_files = sorted(sample_dir.glob("*_bowtie2.log"))
+    if bowtie_files:
+        text = bowtie_files[0].read_text(encoding="utf-8", errors="ignore")
+        match = BOWTIE2_OVERALL_ALIGN_RE.search(text)
+        if match:
+            result["mapping_tool"] = "bowtie2"
+            result["overall_alignment_pct"] = float(match.group(1))
     return result
 
 
@@ -175,6 +193,66 @@ def detect_plannotate_status(sample_dir: Path) -> str:
     if list(sample_dir.glob("*_plannotate")):
         return "present"
     return "missing"
+
+
+def count_vcf_records(path: Path) -> int:
+    if not path.exists():
+        return 0
+    n = 0
+    with path.open(encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if line.startswith("#"):
+                continue
+            if line.strip():
+                n += 1
+    return n
+
+
+def parse_snpeff_impacts(path: Path) -> Dict[str, int]:
+    impacts = {"HIGH": 0, "MODERATE": 0, "LOW": 0, "MODIFIER": 0}
+    if not path.exists():
+        return impacts
+    with path.open(encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if line.startswith("#"):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 8:
+                continue
+            info = parts[7]
+            ann_items = []
+            for token in info.split(";"):
+                if token.startswith("ANN="):
+                    ann_items = token[4:].split(",")
+                    break
+            for ann in ann_items:
+                cols = ann.split("|")
+                if len(cols) > 2 and cols[2] in impacts:
+                    impacts[cols[2]] += 1
+    return impacts
+
+
+def parse_variant_outputs(sample_dir: Path, sample_name: str) -> Dict[str, object]:
+    snps_vcf = sample_dir / f"{sample_name}_varscan_snps.vcf"
+    indels_vcf = sample_dir / f"{sample_name}_varscan_indels.vcf"
+    merged_vcf = sample_dir / f"{sample_name}_varscan_merged.vcf"
+    snpeff_vcf = sample_dir / f"{sample_name}_varscan_snpeff.vcf"
+
+    snp_count = count_vcf_records(snps_vcf)
+    indel_count = count_vcf_records(indels_vcf)
+    merged_count = count_vcf_records(merged_vcf)
+    snpeff_count = count_vcf_records(snpeff_vcf)
+    impacts = parse_snpeff_impacts(snpeff_vcf)
+
+    return {
+        "snp_count": snp_count,
+        "indel_count": indel_count,
+        "total_variants": merged_count if merged_count else (snp_count + indel_count),
+        "snpeff_status": "present" if snpeff_vcf.exists() else "missing",
+        "snpeff_annotated_variant_count": snpeff_count,
+        "snpeff_high_count": impacts["HIGH"],
+        "snpeff_moderate_count": impacts["MODERATE"],
+    }
 
 
 def discover_extra_sample_dirs(run_dir: Path, known_folders: set[str]) -> List[Dict[str, str]]:
@@ -208,10 +286,11 @@ def build_rows(
         plid = job["plid"].strip() or (pl_match.group(1) if pl_match else "")
 
         fastp = parse_fastp_json(sample_dir) if sample_dir.exists() else {}
-        bowtie = parse_bowtie_log(sample_dir) if sample_dir.exists() else {}
+        mapping = parse_mapping_log(sample_dir) if sample_dir.exists() else {}
         ref_status = detect_reference_status(sample_dir, job["ref"]) if sample_dir.exists() else "missing"
         unicycler_status = detect_unicycler_status(sample_dir) if sample_dir.exists() else "missing"
         plannotate_status = detect_plannotate_status(sample_dir) if sample_dir.exists() else "missing"
+        variants = parse_variant_outputs(sample_dir, sample_name) if sample_dir.exists() else {}
 
         plate = ""
         well = ""
@@ -229,10 +308,10 @@ def build_rows(
             severity = "fail"
             issues.append("fastp_report_missing")
 
-        mapped = bowtie.get("bowtie2_overall_alignment_pct")
+        mapped = mapping.get("overall_alignment_pct")
         if ref_status in {"found", "ambiguous"} and mapped is None:
             severity = "fail"
-            issues.append("bowtie2_log_missing")
+            issues.append("mapping_log_missing")
 
         if ref_status == "missing":
             if severity != "fail":
@@ -271,7 +350,15 @@ def build_rows(
             "reads_after_filtering": int(reads_after) if reads_after is not None else "",
             "q30_before_pct": round((q30_before or 0) * 100, 2) if q30_before is not None else "",
             "q30_after_pct": round((q30_after or 0) * 100, 2) if q30_after is not None else "",
-            "bowtie2_overall_alignment_pct": round(mapped, 2) if mapped is not None else "",
+            "mapping_tool": mapping.get("mapping_tool") or "",
+            "overall_alignment_pct": round(mapped, 2) if mapped is not None else "",
+            "variant_snp_count": int(variants.get("snp_count", 0)),
+            "variant_indel_count": int(variants.get("indel_count", 0)),
+            "variant_total_count": int(variants.get("total_variants", 0)),
+            "snpeff_status": variants.get("snpeff_status", "missing"),
+            "snpeff_annotated_variant_count": int(variants.get("snpeff_annotated_variant_count", 0)),
+            "snpeff_high_count": int(variants.get("snpeff_high_count", 0)),
+            "snpeff_moderate_count": int(variants.get("snpeff_moderate_count", 0)),
             "unicycler_status": unicycler_status,
             "plannotate_status": plannotate_status,
             "issue_flag": severity,
@@ -297,7 +384,15 @@ def write_csv(path: Path, rows: List[Dict[str, object]]) -> None:
         "reads_after_filtering",
         "q30_before_pct",
         "q30_after_pct",
-        "bowtie2_overall_alignment_pct",
+        "mapping_tool",
+        "overall_alignment_pct",
+        "variant_snp_count",
+        "variant_indel_count",
+        "variant_total_count",
+        "snpeff_status",
+        "snpeff_annotated_variant_count",
+        "snpeff_high_count",
+        "snpeff_moderate_count",
         "unicycler_status",
         "plannotate_status",
         "issue_flag",
@@ -309,6 +404,44 @@ def write_csv(path: Path, rows: List[Dict[str, object]]) -> None:
         for row in rows:
             writer.writerow(row)
 
+
+def run_version(cmd: List[str]) -> str:
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        out = (proc.stdout or proc.stderr or "").strip()
+        if not out:
+            return "unknown"
+        return out.splitlines()[0].strip()
+    except Exception:
+        return "error"
+
+
+def collect_tool_versions() -> List[Tuple[str, str]]:
+    plasmidseq_env = "/group/llshared/shared_conda_envs/plasmidseq/bin"
+    snpeff_env = "/group/llshared/shared_conda_envs/plasmidseq_snpeff_env/bin"
+    plannotate_env = "/group/llshared/shared_conda_envs/plannotate/bin"
+
+    tools = [
+        ("bbmap", [f"{plasmidseq_env}/bbversion.sh"]),
+        ("bowtie2", [f"{plasmidseq_env}/bowtie2", "--version"]),
+        ("samtools", [f"{plasmidseq_env}/samtools", "--version"]),
+        ("sambamba", [f"{plasmidseq_env}/sambamba"]),
+        ("fastp", [f"{plasmidseq_env}/fastp", "--version"]),
+        ("unicycler", [f"{plasmidseq_env}/unicycler", "--version"]),
+        ("minimap2", [f"{plasmidseq_env}/minimap2", "--version"]),
+        ("varscan", [f"{plasmidseq_env}/varscan"]),
+        ("snpEff", [f"{snpeff_env}/snpEff", "-version"]),
+        ("pLannotate", [f"{plannotate_env}/plannotate", "--version"]),
+    ]
+    versions: List[Tuple[str, str]] = []
+    for label, cmd in tools:
+        exe = cmd[0]
+        if os.path.exists(exe):
+            ver = run_version(cmd)
+        else:
+            ver = "not found"
+        versions.append((label, ver))
+    return versions
 
 def fmt_number(value: object) -> str:
     if value in ("", None):
@@ -380,7 +513,7 @@ def make_plate_grids(rows: List[Dict[str, object]], plate_map: Dict[str, Tuple[s
                     state = str(sample["issue_flag"])
                     cls = {"ok": "cell-ok", "warn": "cell-warn", "fail": "cell-fail"}.get(state, "cell-na")
                     reason = str(sample["issue_reason"])
-                    mapping = sample["bowtie2_overall_alignment_pct"]
+                    mapping = sample["overall_alignment_pct"]
                     reads = sample["raw_reads_total"]
                     title = f"{plid} | reads={reads} | map%={mapping} | {reason}"
                     text = plid
@@ -397,6 +530,8 @@ def render_html(
     rows: List[Dict[str, object]],
     plate_map: Dict[str, Tuple[str, str]],
     low_map_threshold: float,
+    version: str,
+    tool_versions: List[Tuple[str, str]],
 ) -> None:
     total = len(rows)
     n_ok = sum(1 for r in rows if r["issue_flag"] == "ok")
@@ -416,7 +551,14 @@ def render_html(
             f"<td>{html.escape(str(r['well']))}</td>"
             f"<td>{fmt_number(r['raw_reads_total'])}</td>"
             f"<td>{fmt_number(r['reads_after_filtering'])}</td>"
-            f"<td>{html.escape(str(r['bowtie2_overall_alignment_pct']))}</td>"
+            f"<td>{html.escape(str(r['mapping_tool']))}</td>"
+            f"<td>{html.escape(str(r['overall_alignment_pct']))}</td>"
+            f"<td>{html.escape(str(r['variant_total_count']))}</td>"
+            f"<td>{html.escape(str(r['variant_snp_count']))}</td>"
+            f"<td>{html.escape(str(r['variant_indel_count']))}</td>"
+            f"<td>{html.escape(str(r['snpeff_status']))}</td>"
+            f"<td>{html.escape(str(r['snpeff_high_count']))}</td>"
+            f"<td>{html.escape(str(r['snpeff_moderate_count']))}</td>"
             f"<td>{html.escape(str(r['reference_status']))}</td>"
             f"<td>{html.escape(str(r['plannotate_status']))}</td>"
             f"<td class='flag-{html.escape(str(r['issue_flag']))}'>{html.escape(str(r['issue_flag']))}</td>"
@@ -467,7 +609,8 @@ def render_html(
   <h1>plasmid-seq run summary</h1>
   <div class="meta">
     run_dir: {html.escape(str(run_dir))}<br>
-    low mapping warning threshold: {low_map_threshold:g}%
+    low mapping warning threshold: {low_map_threshold:g}%<br>
+    version: {html.escape(version)}
   </div>
 
   <div class="cards">
@@ -495,12 +638,25 @@ def render_html(
       <thead>
         <tr>
           <th>PL</th><th>Sample Folder</th><th>Plate</th><th>Well</th>
-          <th>Raw Reads</th><th>Reads After Filter</th><th>Map %</th>
+          <th>Raw Reads</th><th>Reads After Filter</th><th>Mapper</th><th>Map %</th>
+          <th>Var Tot</th><th>SNP</th><th>Indel</th><th>snpEff</th><th>HIGH</th><th>MOD</th>
           <th>Ref Status</th><th>pLannotate</th><th>Issue</th><th>Reason</th>
         </tr>
       </thead>
       <tbody>
         {"".join(table_rows)}
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Programs/softwares used in plasmid-seq v{html.escape(version)}</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Tool</th><th>Version</th></tr>
+      </thead>
+      <tbody>
+        {"".join(f"<tr><td>{html.escape(t)}</td><td>{html.escape(v)}</td></tr>" for t, v in tool_versions)}
       </tbody>
     </table>
   </div>
@@ -530,7 +686,9 @@ def main() -> int:
     csv_path = Path(f"{out_prefix}.csv")
     html_path = Path(f"{out_prefix}.html")
     write_csv(csv_path, rows)
-    render_html(html_path, run_dir, rows, plate_map, args.low_map_threshold)
+    version = args.version or os.environ.get("PLASMIDSEQ_VERSION", "unknown")
+    tool_versions = collect_tool_versions()
+    render_html(html_path, run_dir, rows, plate_map, args.low_map_threshold, version, tool_versions)
 
     print(f"[summary] samples={len(rows)}")
     print(f"[summary] csv={csv_path}")
