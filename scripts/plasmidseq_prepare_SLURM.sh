@@ -99,10 +99,14 @@ echo "[prep] staged fastqs: $n_fastq"
 
 # Move Fastq files to folders
 shopt -s nullglob
-for i in */PL*R1*; do
+for i in */PL*_R1_*.fastq.gz; do
   f=${i%_S*}
   mkdir -p "$f"
   n=${i/_R1_/_R2_}
+  if [[ ! -e "$n" ]]; then
+    echo "[prep][WARN] expected R2 pair missing for: $i (expected: $n); skipping"
+    continue
+  fi
   mv "$i" "$n" "$f"
 done
 shopt -u nullglob
