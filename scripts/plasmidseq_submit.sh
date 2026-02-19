@@ -183,9 +183,19 @@ echo "[submit] max_concurrent=$MAX_CONCURRENT"
 echo "[submit] map_cpus=$MAP_CPUS"
 echo "[submit] ENABLE_VARIANTS=${ENABLE_VARIANTS:-0}"
 echo "[submit] ENABLE_SNPEFF=${ENABLE_SNPEFF:-0}"
+echo "[submit] SLURM_NOTIFY_EMAIL=${SLURM_NOTIFY_EMAIL:-<none>}"
+
+# Optional notification wiring for prep/gather lifecycle events.
+prep_mail_opts=()
+gather_mail_opts=()
+if [[ -n "${SLURM_NOTIFY_EMAIL:-}" ]]; then
+  prep_mail_opts=(--mail-user "$SLURM_NOTIFY_EMAIL" --mail-type BEGIN,FAIL)
+  gather_mail_opts=(--mail-user "$SLURM_NOTIFY_EMAIL" --mail-type END,FAIL)
+fi
 
 # 1) Submit prep job (writes jobs.tsv into scratch)
 prep_jobid=$(sbatch --parsable \
+  "${prep_mail_opts[@]}" \
   --export=ALL,PLASMIDSEQ_CONFIG="${PLASMIDSEQ_CONFIG:-}" \
   "${script_dir}/plasmidseq_prepare_SLURM.sh" \
   -d "$plasmidSeqData" -t "$tsv" -f "$refs" -j "$jobdate"
@@ -288,6 +298,7 @@ done
 
 # 4) Submit gather job — depends on array completing successfully
 gather_jobid=$(sbatch --parsable \
+  "${gather_mail_opts[@]}" \
   --dependency=afterok:"$array_jobids_dep" \
   --output="$SCRATCH/Logs/slurm-%A.out" \
   --error="$SCRATCH/Logs/slurm-%A.out" \
