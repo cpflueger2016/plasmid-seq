@@ -1,77 +1,101 @@
 # plasmidseq.local.config
-# Local/site overrides (do NOT commit). Copy this file next to plasmidseq_submit.sh.
-#
-# Recommended: add to .gitignore
+# Local/site overrides (do NOT commit). Copy next to plasmidseq_submit.sh.
+# Suggested gitignore entry:
 #   scripts/plasmidseq.local.config
 
 ########################
-# Core paths (edit these)
+# Environment
 ########################
 
-# Where final results should be written
-RESULTS_BASE="/group/llshared/PlasmidSeq/Results"
+# Shared group to apply on gathered outputs (optional)
+RESULTS_GROUP="llusers"
 
-# Default mapping TSV and reference FASTA directory
+# Conda env name or full path (required for mapper tools)
+CONDA_ENV="/group/llshared/shared_conda_envs/plasmidseq"
+
+# Optional dedicated pLannotate env (full path). Leave empty to disable.
+CONDA_ENV_PLANNOTATE="/group/llshared/shared_conda_envs/plannotate"
+
+# Optional conda init script for non-interactive Slurm jobs
+CONDA_INIT=""
+
+# Optional space-separated modules to load
+MODULES=""
+
+########################
+# Core paths
+########################
+
+RESULTS_BASE="/group/llshared/PlasmidSeq/Results"
 DEFAULT_TSV="/group/llshared/PlasmidSeq/PL_to_fasta.tsv"
 DEFAULT_REFS="/group/llshared/PlasmidSeq/Fasta_Reference_Files"
 
-# Scratch base (prefer using the site-provided env var if available)
-# If your site sets MYSCRATCH, you can leave SCRATCH_BASE as-is.
+# Prefer site-provided MYSCRATCH when available
 SCRATCH_BASE="${MYSCRATCH:-/scratch/${USER}}"
 
-##################################
-# Pipeline scripts / tool locations
-##################################
+########################
+# Pipeline script resolution
+########################
 
-# If the pipeline scripts are installed somewhere shared, set this.
-# Otherwise, leave empty and the Slurm scripts will use their own directory.
+# Leave empty to use this config directory
 PIPELINE_SCRIPTS_DIR=""
 
-# Explicit script paths override PIPELINE_SCRIPTS_DIR if set:
-MATCHER_PATH=""   # e.g. "/path/to/scripts/match_plasmid_fasta_refs_v2.bash"
-MAPPER_PATH=""    # e.g. "/path/to/scripts/plasmidseq_mapper_PE.sh"
+# Optional explicit script paths
+MATCHER_PATH=""
+MAPPER_PATH=""
+
+# Optional explicit fallbacks
+MATCHER_FALLBACK=""
+MAPPER_FALLBACK=""
 
 ########################
-# Conda/module activation
-########################
-
-# Optional: modules to load (space-separated). Leave blank if not needed.
-MODULES=""
-
-# How to initialize conda for non-interactive batch jobs.
-# Typical options:
-#   CONDA_INIT="$HOME/miniconda3/etc/profile.d/conda.sh"
-#   CONDA_INIT="/path/to/miniconda/etc/profile.d/conda.sh"
-CONDA_INIT=""
-
-# Conda env name OR absolute env path
-# Examples:
-#   CONDA_ENV="bioinfo"
-#   CONDA_ENV="/group/peb002/conda_environments/bioinfo"
-CONDA_ENV=""
-
-########################
-# Slurm defaults (edit if needed)
+# Scheduling / notifications
 ########################
 
 PARTITION_PREP="ll"
 PARTITION_MAP="work"
 PARTITION_GATHER="ll"
 
-# Optional: account/QoS (set if your site requires)
 SBATCH_ACCOUNT=""
 SBATCH_QOS=""
+
+# Email notifications (optional)
+# prep: BEGIN,FAIL  gather: END,FAIL
+SLURM_NOTIFY_EMAIL=""
 
 ########################
 # Performance knobs
 ########################
 
-# Default concurrency throttle for job arrays (submit -p overrides)
+# submit -p overrides this
 MAX_CONCURRENT_DEFAULT=50
 
-# Cluster max array size (often 1001)
+# site array limit (often 1001)
 MAX_ARRAY_SIZE=1001
 
-# Mapping resources (sbatch CLI options override #SBATCH inside scripts)
+# submit -J overrides MAP_CPUS_PER_TASK
 MAP_CPUS_PER_TASK=4
-MAP_MEM_PER_CPU="10G"
+MAP_MEM_PER_CPU="8G"
+
+########################
+# Variant calling / annotation
+########################
+
+# 0=off, 1=on (CLI -V/-N overrides)
+ENABLE_VARIANTS=0
+VARSCAN_BIN="varscan"
+VARSCAN_JAR=""
+VARSCAN_MIN_COVERAGE=10
+VARSCAN_MIN_VAR_FREQ=0.01
+VARSCAN_PVALUE=0.05
+
+# 0=off, 1=on (CLI -E/-S overrides)
+ENABLE_SNPEFF=0
+
+# Dedicated snpEff env (recommended)
+SNPEFF_ENV_PREFIX="/group/llshared/shared_conda_envs/plasmidseq_snpeff_env"
+SNPEFF_BIN="${SNPEFF_ENV_PREFIX}/bin/snpEff"
+SNPEFF_JAVA_HOME="${SNPEFF_ENV_PREFIX}"
+SNPEFF_DB=""
+SNPEFF_CONFIG_FILE=""
+SNPEFF_DATA_DIR=""
