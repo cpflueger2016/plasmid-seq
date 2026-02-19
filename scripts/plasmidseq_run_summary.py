@@ -622,7 +622,8 @@ def render_html(
         table_rows.append(
             f"<tr data-issue='{html.escape(str(r['issue_flag']))}'"
             f" data-qc='{html.escape(str(r.get('sample_qc_light','')))}'"
-            f" data-plate='{html.escape(str(r['plate']))}'>"
+            f" data-plate='{html.escape(str(r['plate']))}'"
+            f" data-reads='{html.escape(str(r['raw_reads_total'] if r['raw_reads_total'] != '' else 0))}'>"
             f"<td>{pl_cell}</td>"
             f"<td><a href=\"{html.escape(sample_report_rel)}\">{html.escape(str(r['sample_folder']))}</a></td>"
             f"<td>{html.escape(str(r['plate']))}</td>"
@@ -733,6 +734,8 @@ def render_html(
       <option value="red">red</option>
     </select>
     <input id="flt-plate" type="text" placeholder="Plate (e.g. plate_2)" />
+    <input id="flt-reads-min" type="number" min="0" step="1" placeholder="Min reads" />
+    <input id="flt-reads-max" type="number" min="0" step="1" placeholder="Max reads" />
   </div>
   <div class="table-wrap">
     <table id="summary-table">
@@ -770,26 +773,35 @@ def render_html(
       const issue = document.getElementById("flt-issue");
       const qc = document.getElementById("flt-qc");
       const plate = document.getElementById("flt-plate");
+      const readsMin = document.getElementById("flt-reads-min");
+      const readsMax = document.getElementById("flt-reads-max");
 
       function applyFilters() {{
         const qv = (q?.value || "").toLowerCase().trim();
         const iv = (issue?.value || "").toLowerCase().trim();
         const qcv = (qc?.value || "").toLowerCase().trim();
         const pv = (plate?.value || "").toLowerCase().trim();
+        const minReads = (readsMin?.value || "").trim();
+        const maxReads = (readsMax?.value || "").trim();
+        const minV = minReads === "" ? null : Number(minReads);
+        const maxV = maxReads === "" ? null : Number(maxReads);
         for (const tr of bodyRows) {{
           const txt = tr.textContent.toLowerCase();
           const trIssue = (tr.getAttribute("data-issue") || "").toLowerCase();
           const trQc = (tr.getAttribute("data-qc") || "").toLowerCase();
           const trPlate = (tr.getAttribute("data-plate") || "").toLowerCase();
+          const trReads = Number(tr.getAttribute("data-reads") || "0");
           const okQ = !qv || txt.includes(qv);
           const okI = !iv || trIssue === iv;
           const okQc = !qcv || trQc === qcv;
           const okP = !pv || trPlate.includes(pv);
-          tr.style.display = (okQ && okI && okQc && okP) ? "" : "none";
+          const okMin = minV === null || trReads >= minV;
+          const okMax = maxV === null || trReads <= maxV;
+          tr.style.display = (okQ && okI && okQc && okP && okMin && okMax) ? "" : "none";
         }}
       }}
 
-      [q, issue, qc, plate].forEach(el => el && el.addEventListener("input", applyFilters));
+      [q, issue, qc, plate, readsMin, readsMax].forEach(el => el && el.addEventListener("input", applyFilters));
       [issue, qc].forEach(el => el && el.addEventListener("change", applyFilters));
       applyFilters();
     }})();
