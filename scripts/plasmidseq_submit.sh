@@ -7,7 +7,7 @@ DEFAULT_TSV=""
 DEFAULT_REFS=""
 MAX_CONCURRENT=""
 MAP_CPUS=""
-PLASMIDSEQ_VERSION="1.0"
+PLASMIDSEQ_VERSION="1.1"
 log_file="" 
 plasmidSeqData=""
 tsv=""
@@ -121,6 +121,9 @@ jobname="plasmidSeq_${jobdate}"
 # Parse args first (so -c can point to a different config)
 
 load_config
+
+# Make pipeline version available to downstream SLURM jobs (e.g. run_summary).
+export PLASMIDSEQ_VERSION
 
 # Apply config defaults only if user didn't override via CLI
 tsv="${tsv:-${DEFAULT_TSV}}"

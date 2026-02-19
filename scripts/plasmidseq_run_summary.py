@@ -131,6 +131,8 @@ def parse_fastp_json(sample_dir: Path) -> Dict[str, Optional[float]]:
     }
     files = sorted(sample_dir.glob("*_fastp_report.json"))
     if not files:
+        files = sorted((sample_dir / "Summary").glob("*_fastp_report.json"))
+    if not files:
         return result
 
     try:
@@ -154,6 +156,8 @@ def parse_mapping_log(sample_dir: Path) -> Dict[str, Optional[float]]:
         "overall_alignment_pct": None,
     }
     bbmap_files = sorted(sample_dir.glob("*_bbmap.log"))
+    if not bbmap_files:
+        bbmap_files = sorted((sample_dir / "Logs").glob("*_bbmap.log"))
     if bbmap_files:
         text = bbmap_files[0].read_text(encoding="utf-8", errors="ignore")
         match = BBMAP_MAPPED_PCT_RE.search(text)
@@ -164,6 +168,8 @@ def parse_mapping_log(sample_dir: Path) -> Dict[str, Optional[float]]:
 
     # Backward compatibility for prior runs.
     bowtie_files = sorted(sample_dir.glob("*_bowtie2.log"))
+    if not bowtie_files:
+        bowtie_files = sorted((sample_dir / "Logs").glob("*_bowtie2.log"))
     if bowtie_files:
         text = bowtie_files[0].read_text(encoding="utf-8", errors="ignore")
         match = BOWTIE2_OVERALL_ALIGN_RE.search(text)
@@ -233,10 +239,19 @@ def parse_snpeff_impacts(path: Path) -> Dict[str, int]:
 
 
 def parse_variant_outputs(sample_dir: Path, sample_name: str) -> Dict[str, object]:
+    snp_dir = sample_dir / "SNP_INDEL"
     snps_vcf = sample_dir / f"{sample_name}_varscan_snps.vcf"
     indels_vcf = sample_dir / f"{sample_name}_varscan_indels.vcf"
     merged_vcf = sample_dir / f"{sample_name}_varscan_merged.vcf"
     snpeff_vcf = sample_dir / f"{sample_name}_varscan_snpeff.vcf"
+    if not snps_vcf.exists():
+        snps_vcf = snp_dir / f"{sample_name}_varscan_snps.vcf"
+    if not indels_vcf.exists():
+        indels_vcf = snp_dir / f"{sample_name}_varscan_indels.vcf"
+    if not merged_vcf.exists():
+        merged_vcf = snp_dir / f"{sample_name}_varscan_merged.vcf"
+    if not snpeff_vcf.exists():
+        snpeff_vcf = snp_dir / f"{sample_name}_varscan_snpeff.vcf"
 
     snp_count = count_vcf_records(snps_vcf)
     indel_count = count_vcf_records(indels_vcf)
@@ -255,10 +270,43 @@ def parse_variant_outputs(sample_dir: Path, sample_name: str) -> Dict[str, objec
     }
 
 
+def parse_sample_report_status(sample_dir: Path) -> Dict[str, object]:
+    result: Dict[str, object] = {
+        "sample_qc_light": "",
+        "sample_qc_score": "",
+        "sample_qc_summary": "",
+        "sample_qc_flags": [],
+    }
+    files = sorted(sample_dir.glob("*_sample_report.json"))
+    if not files:
+        files = sorted((sample_dir / "Summary").glob("*_sample_report.json"))
+    if not files:
+        return result
+    try:
+        data = json.loads(files[0].read_text(encoding="utf-8", errors="ignore"))
+    except Exception:
+        return result
+    status = data.get("status", {})
+    light = str(status.get("traffic_light", "")).strip().lower()
+    score = to_float_or_none(status.get("score"))
+    summary = str(status.get("summary", "")).strip()
+    flags = data.get("flags", [])
+    if not isinstance(flags, list):
+        flags = []
+    flags = [str(f).strip() for f in flags if str(f).strip()]
+    result["sample_qc_light"] = light
+    result["sample_qc_score"] = round(score, 2) if score is not None else ""
+    result["sample_qc_summary"] = summary
+    result["sample_qc_flags"] = flags
+    return result
+
+
 def discover_extra_sample_dirs(run_dir: Path, known_folders: set[str]) -> List[Dict[str, str]]:
     extras: List[Dict[str, str]] = []
     for fastp_json in run_dir.glob("**/*_fastp_report.json"):
         sample_dir = fastp_json.parent
+        if sample_dir.name == "Summary":
+            sample_dir = sample_dir.parent
         rel = str(sample_dir.relative_to(run_dir))
         if rel in known_folders:
             continue
@@ -291,6 +339,7 @@ def build_rows(
         unicycler_status = detect_unicycler_status(sample_dir) if sample_dir.exists() else "missing"
         plannotate_status = detect_plannotate_status(sample_dir) if sample_dir.exists() else "missing"
         variants = parse_variant_outputs(sample_dir, sample_name) if sample_dir.exists() else {}
+        sample_qc = parse_sample_report_status(sample_dir) if sample_dir.exists() else {}
 
         plate = ""
         well = ""
@@ -332,6 +381,15 @@ def build_rows(
                 severity = "warn"
             issues.append("plannotate_missing")
 
+        # Prefer per-sample QC classification when available.
+        qc_light = str(sample_qc.get("sample_qc_light", "")).lower()
+        qc_to_flag = {"green": "ok", "yellow": "warn", "orange": "warn", "red": "fail"}
+        if qc_light in qc_to_flag:
+            severity = qc_to_flag[qc_light]
+            qc_flags = sample_qc.get("sample_qc_flags", [])
+            if isinstance(qc_flags, list) and qc_flags:
+                issues.append("Flags: " + ", ".join(str(x) for x in qc_flags))
+
         raw_reads = fastp.get("raw_reads_total")
         reads_after = fastp.get("reads_after_filtering")
         q30_before = fastp.get("q30_before")
@@ -361,6 +419,9 @@ def build_rows(
             "snpeff_moderate_count": int(variants.get("snpeff_moderate_count", 0)),
             "unicycler_status": unicycler_status,
             "plannotate_status": plannotate_status,
+            "sample_qc_light": sample_qc.get("sample_qc_light", ""),
+            "sample_qc_score": sample_qc.get("sample_qc_score", ""),
+            "sample_qc_summary": sample_qc.get("sample_qc_summary", ""),
             "issue_flag": severity,
             "issue_reason": ";".join(issues),
         }
@@ -395,6 +456,9 @@ def write_csv(path: Path, rows: List[Dict[str, object]]) -> None:
         "snpeff_moderate_count",
         "unicycler_status",
         "plannotate_status",
+        "sample_qc_light",
+        "sample_qc_score",
+        "sample_qc_summary",
         "issue_flag",
         "issue_reason",
     ]
@@ -509,6 +573,7 @@ def make_plate_grids(rows: List[Dict[str, object]], plate_map: Dict[str, Tuple[s
                     cls = "cell-na"
                     title = f"{plid}: not in run output"
                     text = plid
+                    cell_inner = html.escape(text)
                 else:
                     state = str(sample["issue_flag"])
                     cls = {"ok": "cell-ok", "warn": "cell-warn", "fail": "cell-fail"}.get(state, "cell-na")
@@ -517,7 +582,11 @@ def make_plate_grids(rows: List[Dict[str, object]], plate_map: Dict[str, Tuple[s
                     reads = sample["raw_reads_total"]
                     title = f"{plid} | reads={reads} | map%={mapping} | {reason}"
                     text = plid
-                cells.append(f'<td class="{cls}" title="{html.escape(title)}">{html.escape(text)}</td>')
+                    sample_folder = str(sample.get("sample_folder", ""))
+                    sample_name = str(sample.get("sample_name", ""))
+                    rel_html = f"{sample_folder}/Summary/{sample_name}_sample_report.html"
+                    cell_inner = f'<a href="{html.escape(rel_html)}">{html.escape(text)}</a>'
+                cells.append(f'<td class="{cls}" title="{html.escape(title)}">{cell_inner}</td>')
             out.append("<tr>" + "".join(cells) + "</tr>")
         out.append("</table>")
 
@@ -543,10 +612,19 @@ def render_html(
 
     table_rows: List[str] = []
     for r in rows:
+        sample_folder = str(r["sample_folder"])
+        sample_name = str(r["sample_name"])
+        sample_report_rel = f"{sample_folder}/Summary/{sample_name}_sample_report.html"
+        pl_text = html.escape(str(r["pl_id"]))
+        pl_cell = pl_text
+        if str(r["pl_id"]).strip():
+            pl_cell = f'<a href="{html.escape(sample_report_rel)}">{pl_text}</a>'
         table_rows.append(
-            "<tr>"
-            f"<td>{html.escape(str(r['pl_id']))}</td>"
-            f"<td>{html.escape(str(r['sample_folder']))}</td>"
+            f"<tr data-issue='{html.escape(str(r['issue_flag']))}'"
+            f" data-qc='{html.escape(str(r.get('sample_qc_light','')))}'"
+            f" data-plate='{html.escape(str(r['plate']))}'>"
+            f"<td>{pl_cell}</td>"
+            f"<td><a href=\"{html.escape(sample_report_rel)}\">{html.escape(str(r['sample_folder']))}</a></td>"
             f"<td>{html.escape(str(r['plate']))}</td>"
             f"<td>{html.escape(str(r['well']))}</td>"
             f"<td>{fmt_number(r['raw_reads_total'])}</td>"
@@ -561,6 +639,8 @@ def render_html(
             f"<td>{html.escape(str(r['snpeff_moderate_count']))}</td>"
             f"<td>{html.escape(str(r['reference_status']))}</td>"
             f"<td>{html.escape(str(r['plannotate_status']))}</td>"
+            f"<td>{html.escape(str(r['sample_qc_light']))}</td>"
+            f"<td>{html.escape(str(r['sample_qc_score']))}</td>"
             f"<td class='flag-{html.escape(str(r['issue_flag']))}'>{html.escape(str(r['issue_flag']))}</td>"
             f"<td>{html.escape(str(r['issue_reason']))}</td>"
             "</tr>"
@@ -593,6 +673,10 @@ def render_html(
     th, td {{ border: 1px solid #d1d5db; padding: 5px 6px; font-size: 12px; }}
     th {{ background: #f3f4f6; position: sticky; top: 0; }}
     .table-wrap {{ max-height: 520px; overflow: auto; border: 1px solid #d1d5db; }}
+    .filters {{ display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }}
+    .filters input, .filters select {{ padding: 5px 7px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; }}
+    a {{ color: #1d4ed8; text-decoration: none; }}
+    a:hover {{ text-decoration: underline; }}
     .plate {{ width: auto; margin-bottom: 20px; }}
     .plate th, .plate td {{ text-align: center; min-width: 52px; }}
     .cell-ok {{ background: #86efac; }}
@@ -633,14 +717,31 @@ def render_html(
   {plate_html}
 
   <h2>Per-Sample Metrics</h2>
+  <div class="filters">
+    <input id="flt-search" type="text" placeholder="Search PL/sample/reason" />
+    <select id="flt-issue">
+      <option value="">Issue: all</option>
+      <option value="ok">ok</option>
+      <option value="warn">warn</option>
+      <option value="fail">fail</option>
+    </select>
+    <select id="flt-qc">
+      <option value="">Sample QC: all</option>
+      <option value="green">green</option>
+      <option value="yellow">yellow</option>
+      <option value="orange">orange</option>
+      <option value="red">red</option>
+    </select>
+    <input id="flt-plate" type="text" placeholder="Plate (e.g. plate_2)" />
+  </div>
   <div class="table-wrap">
-    <table>
+    <table id="summary-table">
       <thead>
         <tr>
           <th>PL</th><th>Sample Folder</th><th>Plate</th><th>Well</th>
           <th>Raw Reads</th><th>Reads After Filter</th><th>Mapper</th><th>Map %</th>
           <th>Var Tot</th><th>SNP</th><th>Indel</th><th>snpEff</th><th>HIGH</th><th>MOD</th>
-          <th>Ref Status</th><th>pLannotate</th><th>Issue</th><th>Reason</th>
+          <th>Ref Status</th><th>pLannotate</th><th>Sample QC</th><th>Score</th><th>Issue</th><th>Reason</th>
         </tr>
       </thead>
       <tbody>
@@ -660,6 +761,39 @@ def render_html(
       </tbody>
     </table>
   </div>
+  <script>
+    (function() {{
+      const tbl = document.getElementById("summary-table");
+      if (!tbl) return;
+      const bodyRows = Array.from(tbl.querySelectorAll("tbody tr"));
+      const q = document.getElementById("flt-search");
+      const issue = document.getElementById("flt-issue");
+      const qc = document.getElementById("flt-qc");
+      const plate = document.getElementById("flt-plate");
+
+      function applyFilters() {{
+        const qv = (q?.value || "").toLowerCase().trim();
+        const iv = (issue?.value || "").toLowerCase().trim();
+        const qcv = (qc?.value || "").toLowerCase().trim();
+        const pv = (plate?.value || "").toLowerCase().trim();
+        for (const tr of bodyRows) {{
+          const txt = tr.textContent.toLowerCase();
+          const trIssue = (tr.getAttribute("data-issue") || "").toLowerCase();
+          const trQc = (tr.getAttribute("data-qc") || "").toLowerCase();
+          const trPlate = (tr.getAttribute("data-plate") || "").toLowerCase();
+          const okQ = !qv || txt.includes(qv);
+          const okI = !iv || trIssue === iv;
+          const okQc = !qcv || trQc === qcv;
+          const okP = !pv || trPlate.includes(pv);
+          tr.style.display = (okQ && okI && okQc && okP) ? "" : "none";
+        }}
+      }}
+
+      [q, issue, qc, plate].forEach(el => el && el.addEventListener("input", applyFilters));
+      [issue, qc].forEach(el => el && el.addEventListener("change", applyFilters));
+      applyFilters();
+    }})();
+  </script>
 </body>
 </html>
 """

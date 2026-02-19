@@ -78,35 +78,6 @@ elif [[ -f "${script_dir}/plasmidseq_sample_report.py" ]]; then
 elif [[ -f "$(cd "$(dirname "$cfg")" && pwd -P)/plasmidseq_sample_report.py" ]]; then
   SAMPLE_REPORT_SCRIPT="$(cd "$(dirname "$cfg")" && pwd -P)/plasmidseq_sample_report.py"
 fi
-if [[ -n "$PLATE_MAP_CSV" ]]; then
-  if [[ ! -f "$PLATE_MAP_CSV" ]]; then
-    echo "[gather][WARN] plate map CSV not found; skipping run summary: $PLATE_MAP_CSV"
-  elif [[ -z "$SUMMARY_SCRIPT" || ! -f "$SUMMARY_SCRIPT" ]]; then
-    echo "[gather][WARN] summary script not found; skipping run summary: $SUMMARY_SCRIPT"
-  else
-    echo "[gather] building run summary with plate map: $PLATE_MAP_CSV"
-    echo "[gather] summary script: $SUMMARY_SCRIPT"
-    if command -v python3 >/dev/null 2>&1; then
-      PYTHON_BIN="python3"
-    elif command -v python >/dev/null 2>&1; then
-      PYTHON_BIN="python"
-    else
-      PYTHON_BIN=""
-    fi
-
-    if [[ -z "$PYTHON_BIN" ]]; then
-      echo "[gather][WARN] no python interpreter found; skipping run summary."
-    elif ! "$PYTHON_BIN" "$SUMMARY_SCRIPT" -r "$RESULTS" -m "$PLATE_MAP_CSV" > "$SCRATCH/Logs/run_summary.log" 2>&1; then
-      echo "[gather][WARN] run summary generation failed; continuing gather."
-      tail -n 40 "$SCRATCH/Logs/run_summary.log" || true
-    else
-      echo "[gather] run summary generated: $RESULTS/run_summary.csv and $RESULTS/run_summary.html"
-    fi
-  fi
-else
-  echo "[gather] no plate map CSV provided; skipping run summary."
-fi
-
 # Build per-sample report (JSON + HTML) with coverage comparison.
 if [[ -z "$SAMPLE_REPORT_SCRIPT" || ! -f "$SAMPLE_REPORT_SCRIPT" ]]; then
   echo "[gather][WARN] sample report script not found; skipping per-sample reports: $SAMPLE_REPORT_SCRIPT"
@@ -136,6 +107,36 @@ else
     fi
   done < <(find "$RESULTS" -type f -name "*_fastp_report.json" | sort)
   echo "[gather] per-sample reports generated: $report_count"
+fi
+
+# Build run summary after per-sample reports so run-level issue flags can follow sample QC.
+if [[ -n "$PLATE_MAP_CSV" ]]; then
+  if [[ ! -f "$PLATE_MAP_CSV" ]]; then
+    echo "[gather][WARN] plate map CSV not found; skipping run summary: $PLATE_MAP_CSV"
+  elif [[ -z "$SUMMARY_SCRIPT" || ! -f "$SUMMARY_SCRIPT" ]]; then
+    echo "[gather][WARN] summary script not found; skipping run summary: $SUMMARY_SCRIPT"
+  else
+    echo "[gather] building run summary with plate map: $PLATE_MAP_CSV"
+    echo "[gather] summary script: $SUMMARY_SCRIPT"
+    if command -v python3 >/dev/null 2>&1; then
+      PYTHON_BIN="python3"
+    elif command -v python >/dev/null 2>&1; then
+      PYTHON_BIN="python"
+    else
+      PYTHON_BIN=""
+    fi
+
+    if [[ -z "$PYTHON_BIN" ]]; then
+      echo "[gather][WARN] no python interpreter found; skipping run summary."
+    elif ! "$PYTHON_BIN" "$SUMMARY_SCRIPT" -r "$RESULTS" -m "$PLATE_MAP_CSV" > "$SCRATCH/Logs/run_summary.log" 2>&1; then
+      echo "[gather][WARN] run summary generation failed; continuing gather."
+      tail -n 40 "$SCRATCH/Logs/run_summary.log" || true
+    else
+      echo "[gather] run summary generated: $RESULTS/run_summary.csv and $RESULTS/run_summary.html"
+    fi
+  fi
+else
+  echo "[gather] no plate map CSV provided; skipping run summary."
 fi
 
 # Organize per-sample output folders.
