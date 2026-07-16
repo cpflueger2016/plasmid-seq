@@ -145,7 +145,9 @@ cp -p "$scratch/jobs.tsv" "$scratch/plasmid_fasta_match.log" "$results/" 2>/dev/
 if [[ -n "$plate_map" ]]; then
   cp -p "$plate_map" "$results/PL_to_plate_position.csv"
 fi
-find "$scratch" -mindepth 2 -maxdepth 2 -type d -name 'PL*' -exec cp -R {} "$results/" \;
+# Preserve the project-directory layer used in jobs.tsv. Flattening individual
+# PL folders makes run_summary.py see a missing job folder plus an extra sample.
+find "$scratch" -mindepth 1 -maxdepth 1 -type d ! -name 'Fasta_Reference_Files' -exec cp -R {} "$results/" \;
 
 while IFS= read -r report_json; do
   sample_dir="$(dirname "$report_json")"
