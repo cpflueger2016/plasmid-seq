@@ -9,6 +9,7 @@ fi
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+bash_bin="$BASH"
 matcher="${script_dir}/match_plasmid_fasta_refs_v2.bash"
 mapper="${script_dir}/plasmidseq_mapper_PE.sh"
 sample_report="${script_dir}/plasmidseq_sample_report.py"
@@ -98,7 +99,7 @@ for r1 in "$scratch"/*/PL*_R1_*.fastq.gz; do
 done
 shopt -u nullglob
 
-( cd "$scratch" && "$matcher" -r "$scratch" -l "$scratch/plasmid_fasta_match.log" "$scratch/PL_to_fasta.tsv" "$scratch/Fasta_Reference_Files" )
+( cd "$scratch" && "$bash_bin" "$matcher" -r "$scratch" -l "$scratch/plasmid_fasta_match.log" "$scratch/PL_to_fasta.tsv" "$scratch/Fasta_Reference_Files" )
 
 jobs="$scratch/jobs.tsv"
 : > "$jobs"
@@ -118,7 +119,7 @@ echo "[local] samples=$n_jobs"
 
 run_one() {
   local folder="$1" ref="$2" r1="$3" r2="$4" uid="$5"
-  ( cd "$scratch/$folder" && THREADS="$threads" bash "$mapper" -1 "$r1" -2 "$r2" -r "$ref" -c -m 300 -u "$uid" -y -s -q 30 ) \
+  ( cd "$scratch/$folder" && THREADS="$threads" "$bash_bin" "$mapper" -1 "$r1" -2 "$r2" -r "$ref" -c -m 300 -u "$uid" -y -s -q 30 ) \
     >"$logs/${uid}.log" 2>&1
 }
 
