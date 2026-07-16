@@ -1,0 +1,7 @@
+name: plasmidseq-snpeff
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - snpeff
+  - openjdk >=17

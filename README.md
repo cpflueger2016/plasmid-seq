@@ -2,6 +2,48 @@
 
 Illumina plasmid QC + reference agreement pipeline for Slurm.
 
+## Local execution (no Slurm)
+
+The repository also provides a local runner for a workstation or Mac. It runs the
+same prepare, mapping, and reporting stages synchronously, with bounded local
+parallelism and no scheduler dependency.
+
+Create the main environment (Apple Silicon is supported through Conda packages):
+
+```bash
+mamba env create -f environment.yml
+conda activate plasmidseq
+```
+
+Then run:
+
+```bash
+scripts/plasmidseq_run_local.sh \
+  -d /path/to/fastqs \
+  -t references/PL_to_fasta.tsv \
+  -f /path/to/fasta_references \
+  -o /path/to/local-runs \
+  -j 1 -J 4
+```
+
+`-j` is the number of samples processed concurrently and `-J` is the number of
+threads for each sample. Start with `-j 1 -J 4` on a laptop because assembly is
+memory-intensive. Results, staged inputs, and logs are retained below the
+selected output directory. Use `-w` to generate the optional plate-map summary.
+
+The optional annotation paths are deliberately separate:
+
+```bash
+mamba env create -f environment-plannotate.yml
+mamba env create -f environment-snpeff.yml
+```
+
+They are not required for standard local QC. Enable variants with `-V`; to include
+pLannotate on assembled samples, pass the pLannotate environment prefix with `-P`.
+The main local runner currently leaves snpEff annotation disabled because it needs a
+run-specific database assembled from the references; its environment is supplied for
+manual or future extension use.
+
 ## What it does
 
 1. Stage FASTQs + references to scratch (`prep` job)

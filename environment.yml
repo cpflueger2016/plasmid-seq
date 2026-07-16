@@ -1,0 +1,23 @@
+name: plasmidseq
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bash >=5
+  - python >=3.10
+  - fastp
+  - bbmap
+  - pigz
+  - samtools
+  - bcftools
+  - htslib
+  - spades
+  - seqkit
+  - unicycler
+  - pilon
+  - varscan
+  - openjdk >=17
+  - perl
+  - rsync
+  - coreutils
+  - findutils
