@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 # Run plasmid-seq locally, without Slurm. Requires the environment in ../environment.yml.
+# macOS ships Bash 3.2, while the matcher uses Bash 4's `mapfile`. `conda run`
+# can preserve a system-first PATH, so explicitly switch to Conda's Bash here.
+if (( BASH_VERSINFO[0] < 4 )) && [[ -n "${CONDA_PREFIX:-}" && -x "${CONDA_PREFIX}/bin/bash" ]]; then
+  script_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")"
+  exec "${CONDA_PREFIX}/bin/bash" "$script_path" "$@"
+fi
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
