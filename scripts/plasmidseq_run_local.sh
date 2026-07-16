@@ -135,6 +135,9 @@ done < "$jobs"
 while [[ ${#pids[@]} -gt 0 ]]; do reap_one; done
 
 cp -p "$scratch/jobs.tsv" "$scratch/plasmid_fasta_match.log" "$results/" 2>/dev/null || true
+if [[ -n "$plate_map" ]]; then
+  cp -p "$plate_map" "$results/PL_to_plate_position.csv"
+fi
 find "$scratch" -mindepth 2 -maxdepth 2 -type d -name 'PL*' -exec cp -R {} "$results/" \;
 
 while IFS= read -r report_json; do

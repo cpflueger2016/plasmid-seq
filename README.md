@@ -30,6 +30,8 @@ scripts/plasmidseq_run_local.sh \
 threads for each sample. Start with `-j 1 -J 4` on a laptop because assembly is
 memory-intensive. Results, staged inputs, and logs are retained below the
 selected output directory. Use `-w` to generate the optional plate-map summary.
+For example, `-w references/PL_to_plate_position.csv` creates `run_summary.csv`
+and `run_summary.html`, and stores the CSV alongside the results.
 
 The optional annotation paths are deliberately separate:
 
