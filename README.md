@@ -26,6 +26,10 @@ scripts/plasmidseq_run_local.sh \
   -j 1 -J 4
 ```
 
+The PL-to-reference mapping may be either a two-column TSV or a simple two-column
+CSV; it is normalized to TSV in the staged run directory. pLannotate can be enabled
+by passing its Conda environment prefix, for example `-P /path/to/plasmidseq-plannotate`.
+
 `-j` is the number of samples processed concurrently and `-J` is the number of
 threads for each sample. Start with `-j 1 -J 4` on a laptop because assembly is
 memory-intensive. Results, staged inputs, and logs are retained below the

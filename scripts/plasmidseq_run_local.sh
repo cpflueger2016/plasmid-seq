@@ -77,7 +77,17 @@ echo "[local] work=$scratch"
 echo "[local] results=$results"
 echo "[local] concurrency=$concurrency threads_per_sample=$threads"
 
-cp -f "$tsv" "$scratch/PL_to_fasta.tsv"
+# The matcher consumes a two-column TSV. Accept a simple comma-delimited mapping
+# file as a convenience, while keeping the user's source metadata unchanged.
+if head -n 1 "$tsv" | grep -q $'\t'; then
+  cp -f "$tsv" "$scratch/PL_to_fasta.tsv"
+elif head -n 1 "$tsv" | grep -q ','; then
+  awk -F ',' 'NF >= 2 { gsub(/\r$/, "", $1); gsub(/\r$/, "", $2); print $1 "\t" $2 }' \
+    "$tsv" > "$scratch/PL_to_fasta.tsv"
+else
+  echo "[local][ERROR] PL-to-FASTA mapping must have at least two tab- or comma-delimited columns: $tsv" >&2
+  exit 2
+fi
 cp -R "$refs" "$scratch/Fasta_Reference_Files"
 fastq_dir="$(cd "$fastq_dir" && pwd -P)"
 rsync -a --prune-empty-dirs \
@@ -108,7 +118,7 @@ while IFS= read -r sample_dir; do
   r2=( "$sample_dir"/*_R2_*.fastq.gz )
   [[ ${#r1[@]} -gt 0 && ${#r2[@]} -gt 0 ]] || continue
   ref="$(find "$sample_dir" -maxdepth 1 -type f \( -name '*_clean.fa' -o -name '*_clean.fasta' -o -name '*.fa' -o -name '*.fasta' \) | head -n 1 || true)"
-  uid="$(basename "$sample_dir" | perl -ne '/(PL\d{4,})/ && print $1')"
+  uid="$(basename "$sample_dir" | perl -ne '/(PL\d+)/ && print $1')"
   [[ -n "$ref" && -n "$uid" ]] || { echo "[local][WARN] skipping unmatched sample: $sample_dir" >&2; continue; }
   printf '%s\t%s\t%s\t%s\t%s\n' "${sample_dir#"$scratch/"}" "${ref##*/}" "${r1[0]##*/}" "${r2[0]##*/}" "$uid" >> "$jobs"
 done < <(find "$scratch" -mindepth 2 -maxdepth 2 -type d -name 'PL*' | sort)
