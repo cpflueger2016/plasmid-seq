@@ -169,11 +169,13 @@ while IFS=$'\t' read -r pl_raw fasta_raw _rest || [[ -n "${pl_raw:-}" ]]; do
     continue
   fi
 
-  # Find destination directories matching PL*
-  mapfile -t dests < <(find "$DEST_ROOT" -type d -iname "${pl}*" -print | sort)
+  # Match the exact PL ID, or an ID followed by the sample-name underscore.
+  # A plain "${pl}*" pattern makes short IDs (e.g. PL1) incorrectly match
+  # PL10, PL11, and so on.
+  mapfile -t dests < <(find "$DEST_ROOT" -mindepth 2 -maxdepth 2 -type d \( -iname "$pl" -o -iname "${pl}_*" \) -print | sort)
 
   if [[ ${#dests[@]} -eq 0 ]]; then
-    log "ERROR" "PL=$pl : No destination directory found under '$DEST_ROOT' matching '${pl}*' (fasta='$fasta_name')"
+    log "ERROR" "PL=$pl : No destination directory found under '$DEST_ROOT' matching '$pl' or '${pl}_*' (fasta='$fasta_name')"
     continue
   fi
 
@@ -271,4 +273,3 @@ while IFS=$'\t' read -r pl_raw fasta_raw _rest || [[ -n "${pl_raw:-}" ]]; do
 done < "$TSV"
 
 vlog "Done."
-
